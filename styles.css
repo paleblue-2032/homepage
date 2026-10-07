@@ -2,6 +2,7 @@
   --bg: #0a0a0f;
   --bg-soft: #12121a;
   --surface: rgba(255, 255, 255, 0.04);
+  --surface-strong: rgba(255, 255, 255, 0.08);
   --border: rgba(255, 255, 255, 0.1);
   --text: #e8e8ee;
   --text-muted: #9a9aab;
@@ -31,14 +32,20 @@ body {
   overflow-x: hidden;
 }
 
+:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
 .glow {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background:
-    radial-gradient(600px 400px at 15% -5%, rgba(124, 92, 255, 0.25), transparent 70%),
-    radial-gradient(500px 400px at 90% 10%, rgba(35, 213, 203, 0.18), transparent 70%);
   pointer-events: none;
+  background:
+    radial-gradient(620px 420px at 15% -5%, color-mix(in oklab, var(--accent) 55%, transparent), transparent 70%),
+    radial-gradient(520px 420px at 90% 8%, color-mix(in oklab, var(--accent-2) 42%, transparent), transparent 70%);
 }
 
 .container {
@@ -116,79 +123,137 @@ a {
   transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
-/* Hero */
+/* Profile switcher */
 .hero {
-  padding: clamp(72px, 14vh, 140px) 24px clamp(48px, 10vh, 96px);
+  padding: clamp(56px, 12vh, 120px) 24px clamp(40px, 8vh, 80px);
 }
 
-.eyebrow {
+.profile-switch {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 44px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.switch-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 20px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.25s ease;
+}
+
+.switch-tab:hover {
+  color: var(--text);
+}
+
+.switch-tab.is-active {
+  color: #0a0a0f;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+}
+
+.switch-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.5;
+}
+
+.switch-tab.is-active .switch-dot {
+  opacity: 1;
+}
+
+/* Profile panel */
+.profile-panel {
+  outline: none;
+}
+
+.profile-content {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.profile-content.switching {
+  animation: panelIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes panelIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.avatar {
+  width: clamp(104px, 20vw, 136px);
+  height: clamp(104px, 20vw, 136px);
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  object-fit: cover;
+  background: var(--bg-soft);
+  box-shadow: 0 0 0 6px var(--surface), 0 18px 44px rgba(0, 0, 0, 0.45);
+}
+
+.profile-meta {
+  min-width: 0;
+}
+
+.handle {
   color: var(--accent-2);
   font-size: 0.9rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  margin-bottom: 12px;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
 }
 
-.hero-title {
-  font-size: clamp(2.4rem, 7vw, 4.2rem);
-  line-height: 1.1;
+.profile-name {
+  font-size: clamp(2rem, 6vw, 3.2rem);
+  line-height: 1.15;
   font-weight: 800;
   letter-spacing: -0.02em;
-  background: linear-gradient(120deg, #ffffff 20%, #b9a8ff 60%, #6fe9e0 100%);
+  background: linear-gradient(120deg, #ffffff 15%, var(--accent) 68%, var(--accent-2) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
-.hero-lead {
-  margin-top: 20px;
-  max-width: 52ch;
-  color: var(--text-muted);
+.profile-tagline {
+  margin-top: 12px;
   font-size: 1.05rem;
-}
-
-.hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin-top: 32px;
-}
-
-.btn {
-  display: inline-block;
-  padding: 12px 24px;
-  border-radius: 999px;
-  font-size: 0.95rem;
   font-weight: 600;
-  transition: transform 0.15s ease, opacity 0.2s ease, background 0.2s ease;
 }
 
-.btn:hover {
-  transform: translateY(-2px);
-}
-
-.btn-primary {
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
-  color: #0a0a0f;
-}
-
-.btn-ghost {
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-}
-
-.btn-ghost:hover {
-  border-color: rgba(255, 255, 255, 0.3);
+.profile-intro {
+  margin-top: 12px;
+  max-width: 54ch;
+  color: var(--text-muted);
 }
 
 /* Sections */
 .section {
-  padding: 56px 24px;
+  padding: 48px 24px;
 }
 
 .section-title {
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: -0.01em;
   margin-bottom: 20px;
@@ -207,23 +272,41 @@ a {
 .section-body {
   color: var(--text-muted);
   max-width: 60ch;
-  margin-bottom: 14px;
+  margin-bottom: 22px;
 }
 
-.chips {
+/* Social links */
+.social-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 14px;
   list-style: none;
 }
 
-.chip {
-  padding: 8px 16px;
-  border-radius: 999px;
+.social {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 10px 20px;
   border: 1px solid var(--border);
+  border-radius: 999px;
   background: var(--surface);
-  font-size: 0.9rem;
-  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: transform 0.15s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.social:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+  background: var(--surface-strong);
+}
+
+.social svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
 }
 
 /* Footer */
@@ -251,8 +334,17 @@ a {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  .reveal { opacity: 1; transform: none; transition: none; }
+  html {
+    scroll-behavior: auto;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .profile-content.switching {
+    animation: none;
+  }
 }
 
 /* Mobile */
@@ -298,5 +390,20 @@ a {
 
   .nav-toggle[aria-expanded="true"] span:nth-child(3) {
     transform: translateY(-7px) rotate(-45deg);
+  }
+
+  .profile-switch {
+    width: 100%;
+  }
+
+  .switch-tab {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .profile-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 22px;
   }
 }
