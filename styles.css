@@ -13,10 +13,6 @@
   box-sizing: border-box;
 }
 
-html {
-  scroll-behavior: smooth;
-}
-
 body {
   font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN",
     "Noto Sans JP", Meiryo, sans-serif;
@@ -41,7 +37,7 @@ a {
 .page {
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: clamp(56px, 14vh, 128px) 24px 72px;
+  padding: clamp(40px, 8vh, 72px) 24px 72px;
 }
 
 /* Profile */
@@ -195,19 +191,7 @@ a {
   border-bottom: none;
 }
 
-/* Footer */
-.site-footer {
-  max-width: var(--max-width);
-  margin: 0 auto;
-  padding: 0 24px 40px;
-  color: var(--text-muted);
-  font-size: 0.82rem;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
   .profile-body.switching {
     animation: none;
   }

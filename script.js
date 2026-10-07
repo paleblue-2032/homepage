@@ -47,7 +47,7 @@ function renderProfile(index, animate) {
 
   if (els.avatar) {
     els.avatar.src = profile.avatar;
-    els.avatar.alt = `${profile.name}のアイコン`;
+    els.avatar.alt = `${profile.name} icon`;
   }
   if (els.handle) els.handle.textContent = profile.handle;
   if (els.name) els.name.textContent = profile.name;
@@ -100,9 +100,4 @@ tabs.forEach((tab, i) => {
 
 if (tabs.length) {
   renderProfile(0, false);
-}
-
-const yearEl = document.getElementById("year");
-if (yearEl) {
-  yearEl.textContent = new Date().getFullYear();
 }
