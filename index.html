@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>あなたの名前 | Portfolio</title>
+  <meta name="description" content="あなたの名前のポートフォリオサイト。自己紹介とお問い合わせ。" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="glow" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="#top" class="logo">Your<span>Name</span></a>
+      <button class="nav-toggle" aria-label="メニューを開く" aria-expanded="false" aria-controls="site-nav">
+        <span></span><span></span><span></span>
+      </button>
+      <nav id="site-nav" class="site-nav">
+        <a href="#about">About</a>
+        <a href="#skills">Skills</a>
+        <a href="#contact">Contact</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero container reveal">
+      <p class="eyebrow">Hello, I'm</p>
+      <h1 class="hero-title">あなたの名前</h1>
+      <p class="hero-lead">
+        ここに一言のキャッチコピーを入れます。何をしている人で、どんなことに興味があるのかを短く。
+      </p>
+      <div class="hero-actions">
+        <a href="#contact" class="btn btn-primary">お問い合わせ</a>
+        <a href="#about" class="btn btn-ghost">もっと見る</a>
+      </div>
+    </section>
+
+    <section id="about" class="container section reveal">
+      <h2 class="section-title">About</h2>
+      <p class="section-body">
+        ここに自己紹介を書きます。出身や今やっていること、これまでの経歴などを2〜3段落でまとめると読みやすくなります。
+      </p>
+      <p class="section-body">
+        趣味や大切にしていることなど、人柄が伝わる内容を足すとGoodです。
+      </p>
+    </section>
+
+    <section id="skills" class="container section reveal">
+      <h2 class="section-title">Skills</h2>
+      <ul class="chips">
+        <li class="chip">HTML</li>
+        <li class="chip">CSS</li>
+        <li class="chip">JavaScript</li>
+        <li class="chip">デザイン</li>
+        <li class="chip">その他</li>
+      </ul>
+    </section>
+
+    <section id="contact" class="container section reveal">
+      <h2 class="section-title">Contact</h2>
+      <p class="section-body">お気軽にご連絡ください。</p>
+      <div class="hero-actions">
+        <a href="mailto:you@example.com" class="btn btn-primary">you@example.com</a>
+        <a href="https://github.com/" target="_blank" rel="noopener noreferrer" class="btn btn-ghost">GitHub</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; <span id="year"></span> あなたの名前. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
