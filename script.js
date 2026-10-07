@@ -4,8 +4,10 @@ const profiles = [
     name: "kanon / paleblue_2032",
     handle: "@kanon_hiiragi",
     tagline: "I live in the terminal with emacs.",
-    intro:
-      "I use NixOS. I'm interested in XR, HCI, and image processing engineering.",
+    intro: [
+      "I use NixOS.",
+      "I'm interested in XR, HCI, and image processing engineering.",
+    ],
     avatar: "assets/icon0.png",
     accent: "#d98fae",
     base: "#141017",
@@ -15,8 +17,10 @@ const profiles = [
     name: "headwind",
     handle: "@headwind_0430",
     tagline: "I'm a student in NIT, Toyama College E Dept.",
-    intro:
-      "I love traveling. Since I don't have much money, I always take local trains :(",
+    intro: [
+      "I love traveling.",
+      "Since I don't have much money, I always take local trains :(",
+    ],
     avatar: "assets/icon1.png",
     accent: "#8496c6",
     base: "#0a0e17",
@@ -52,7 +56,15 @@ function renderProfile(index, animate) {
   if (els.handle) els.handle.textContent = profile.handle;
   if (els.name) els.name.textContent = profile.name;
   if (els.tagline) els.tagline.textContent = profile.tagline;
-  if (els.intro) els.intro.textContent = profile.intro;
+  if (els.intro) {
+    els.intro.textContent = "";
+    profile.intro.forEach((line) => {
+      const span = document.createElement("span");
+      span.className = "intro-line";
+      span.textContent = line;
+      els.intro.appendChild(span);
+    });
+  }
 
   tabs.forEach((tab, i) => {
     const selected = i === index;

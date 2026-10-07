@@ -145,6 +145,10 @@ a {
   color: var(--text-muted);
 }
 
+.intro-line {
+  display: block;
+}
+
 /* Links */
 .links-section {
   margin-bottom: 24px;
