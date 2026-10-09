@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Timer | others</title>
+  <meta name="description" content="カンファで使おうかなと思ってた" />
+  <meta name="theme-color" content="#141017" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <a class="back" href="../">← others</a>
+
+  <div class="hud-corners"></div>
+
+  <div class="timer-wrapper">
+    <div class="timer-container">
+      <svg class="progress-ring" viewBox="0 0 300 300">
+        <circle class="progress-ring__bg" r="140" cx="150" cy="150" />
+        <circle class="progress-ring__fg" id="progress-circle" r="140" cx="150" cy="150" />
+      </svg>
+      <div class="timer-display glitch" id="timerDisplay" data-text="--:--">--:--</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div id="start-menu">
+      <button type="button" onclick="startTimer(600)">10:00 <span class="comment">// INITIATE SEQUENCE</span></button>
+      <button type="button" onclick="startTimer(900)">15:00 <span class="comment">// INITIATE SEQUENCE</span></button>
+    </div>
+    <div id="in-progress-menu" style="display: none;">
+      <button id="pause-btn" type="button" onclick="pauseTimer()">PAUSE <span class="comment">// HALT</span></button>
+      <button id="resume-btn" type="button" onclick="resumeTimer()" style="display: none;">RESUME <span class="comment">// CONTINUE</span></button>
+      <button type="button" onclick="resetTimer()">ABORT <span class="comment">// TERMINATE</span></button>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

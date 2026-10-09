@@ -1,0 +1,144 @@
+/* style.css */
+:root {
+    /* ホームページのパレットに合わせた配色 */
+    --primary-color: #d98fae;   /* accent */
+    --secondary-color: #9d8bc4; /* lavender */
+    --accent-color: #b06a8a;    /* deep pink (glitch) */
+    --bg-color: #141017;        /* base */
+    --line: rgba(255, 255, 255, 0.08);
+    --corner-size: 30px; /* HUDコーナーのサイズ */
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background-color: var(--bg-color); color: var(--primary-color);
+    font-family: 'Fira Code', monospace;
+    display: flex; justify-content: center; align-items: center;
+    height: 100vh; width: 100vw;
+    flex-direction: column;
+    text-shadow: 0 0 6px rgba(217, 143, 174, 0.4);
+    overflow: hidden;
+}
+
+/* 戻るリンク */
+.back {
+    position: fixed; top: 20px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    font-size: 0.82rem; letter-spacing: 0.06em;
+    color: var(--secondary-color); text-shadow: none;
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+.back:hover { color: var(--primary-color); }
+
+/* スキャンラインのアニメーション */
+body::after {
+    content: ' '; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,0.5), rgba(0,0,0,0.5) 1px, transparent 1px, transparent 4px);
+    pointer-events: none; z-index: 10;
+    animation: scanline-scroll 1s linear infinite;
+}
+@keyframes scanline-scroll {
+    from { background-position-y: 0; }
+    to { background-position-y: 4px; }
+}
+
+.timer-wrapper {
+    flex-grow: 1; display: flex;
+    justify-content: center; align-items: center;
+    width: 100%;
+}
+
+.timer-container {
+    position: relative;
+    width: 75vmin;
+    height: 75vmin;
+    display: flex; justify-content: center; align-items: center;
+}
+
+.timer-display {
+    font-size: 15vmin;
+    position: relative;
+}
+
+.progress-ring {
+    position: absolute; width: 100%; height: 100%;
+    transform: rotate(-90deg)
+scaleY(-1);
+}
+.progress-ring__bg, .progress-ring__fg {
+    fill: transparent;
+    stroke-width: 6;
+}
+.progress-ring__bg { stroke: rgba(217, 143, 174, 0.12); }
+.progress-ring__fg { stroke: var(--primary-color); stroke-linecap: round; transition: stroke-dashoffset 0.5s linear; }
+
+/* グリッチエフェクト */
+.glitch::before, .glitch::after {
+    content: attr(data-text); position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: var(--bg-color); overflow: hidden;
+}
+.glitch::before { left: 2px; text-shadow: -2px 0 var(--accent-color); animation: glitch-anim-1 2s infinite linear alternate-reverse; }
+.glitch::after { left: -2px; text-shadow: -2px 0 var(--secondary-color); animation: glitch-anim-2 2s infinite linear alternate-reverse; }
+@keyframes glitch-anim-1 { 0% { clip-path: inset(10% 0 80% 0); } 100% { clip-path: inset(40% 0 20% 0); } }
+@keyframes glitch-anim-2 { 0% { clip-path: inset(70% 0 10% 0); } 100% { clip-path: inset(20% 0 50% 0); } }
+
+/* HUDコーナー */
+.hud-corners::before, .hud-corners::after {
+    content: '';
+    position: absolute;
+    width: var(--corner-size);
+    height: var(--corner-size);
+    border: 2px solid var(--primary-color);
+    animation: corner-pulse 4s linear infinite;
+}
+.hud-corners::before {
+    top: 20px; left: 20px;
+    border-right: none; border-bottom: none;
+}
+.hud-corners::after {
+    top: 20px; right: 20px;
+    border-left: none; border-bottom: none;
+}
+.timer-wrapper::before, .timer-wrapper::after {
+    content: '';
+    position: absolute;
+    width: var(--corner-size);
+    height: var(--corner-size);
+    border: 2px solid var(--primary-color);
+    animation: corner-pulse 4s linear infinite reverse; /* 逆再生でズレを作る */
+}
+.timer-wrapper::before {
+    bottom: 20px; left: 20px;
+    border-right: none; border-top: none;
+}
+.timer-wrapper::after {
+    bottom: 20px; right: 20px;
+    border-left: none; border-top: none;
+}
+@keyframes corner-pulse {
+    0%, 100% { opacity: 0.5; box-shadow: 0 0 5px var(--primary-color); }
+    50% { opacity: 1; box-shadow: 0 0 15px var(--primary-color); }
+}
+
+/* 操作パネル */
+.controls { padding-bottom: 5vh; }
+.controls button {
+    background: transparent; border: 1px solid var(--line); color: var(--primary-color);
+    font-family: inherit; font-size: 1.2em;
+    padding: 15px 25px; margin: 0 15px; cursor: pointer;
+    transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+}
+.controls button:hover { background-color: var(--primary-color); border-color: var(--primary-color); color: var(--bg-color); }
+.controls .comment { color: var(--secondary-color); opacity: 0.7; }
+
+@media (prefers-reduced-motion: reduce) {
+    body::after { animation: none; }
+    .hud-corners::before, .hud-corners::after,
+    .timer-wrapper::before, .timer-wrapper::after { animation: none; }
+    .glitch::before, .glitch::after { animation: none; }
+}
