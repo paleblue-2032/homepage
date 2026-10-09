@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>connpass チェックインシステム | others</title>
+  <meta name="description" content="connpassの受付で使うQRコード出席管理システム（Google Apps Script）の導入手順" />
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../others.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="page">
+    <p class="breadcrumb"><a href="../">← others</a></p>
+
+    <header class="page-head">
+      <h1 class="page-title">connpass チェックインシステム</h1>
+      <p class="page-lead">connpassの受付で使う、QRコードによる出席管理システム（Google Apps Script）。</p>
+    </header>
+
+    <p class="notice">
+      これはWeb上で動作するコンテンツではありません。Googleスプレッドシートに紐づけた
+      Apps Script として設置して使うツールなので、ここでは導入手順だけを説明します。
+      ソースコードは <a href="https://github.com/paleblue-2032/connpass_check-in-system" target="_blank" rel="noopener noreferrer">GitHub リポジトリ</a> で公開しています。
+    </p>
+
+    <div class="prose">
+      <section>
+        <h2>できること</h2>
+        <ul>
+          <li>参加者のQRコードを端末カメラで読み取り、出席とチェックイン時刻を自動で記録</li>
+          <li>交通費補助の対象者を、読み取り時と一覧の両方で表示</li>
+          <li>チェックイン済み／未チェックインの状況を一覧で確認（2秒ごとに自動更新）</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>ファイル構成</h2>
+        <table>
+          <thead>
+            <tr><th>ファイル</th><th>役割</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>Code.gs</code></td><td>サーバー側処理（参加者の検索・記録・状況集計）</td></tr>
+            <tr><td><code>Index.html</code></td><td>受付端末の画面（QR読み取り／状況確認）</td></tr>
+          </tbody>
+        </table>
+        <p>
+          <code>Code.gs</code> は <code>getActiveSpreadsheet()</code> を使うため、必ず
+          <b>スプレッドシートに紐づけた Apps Script</b>（拡張機能 → Apps Script）として設置します。
+          単体の Apps Script プロジェクトでは動作しません。
+        </p>
+      </section>
+
+      <section>
+        <h2>スプレッドシートの準備</h2>
+        <p>シート名 <b>「参加者リスト」</b> を用意し、1行目をヘッダーとして次の列構成にします。</p>
+        <table>
+          <thead>
+            <tr><th>列</th><th>内容</th><th>備考</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>A</td><td>登録番号</td><td>QRコードから読み取る値と一致させる</td></tr>
+            <tr><td>B</td><td>名前</td><td>受付画面・一覧に表示</td></tr>
+            <tr><td>C</td><td>ステータス</td><td>チェックイン時に「出席済み」を自動記入</td></tr>
+            <tr><td>D</td><td>チェックイン時刻</td><td>チェックイン時に <code>HH:mm:ss</code> を自動記入</td></tr>
+            <tr><td>E</td><td>交通費補助の有無</td><td>「あり」のとき補助対象として扱う</td></tr>
+          </tbody>
+        </table>
+        <ul>
+          <li>データは <b>2行目以降</b> を対象とします（1行目はヘッダー）。</li>
+          <li>C・D列は空欄で構いません（自動で書き込まれます）。</li>
+          <li>connpassからダウンロードした参加者CSVをインポートし、A列（登録番号）とB列（名前）に配置します。E列の交通費補助は対象者に手入力します。</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>セットアップ手順</h2>
+        <ol>
+          <li>Googleスプレッドシートを新規作成（または既存を利用）</li>
+          <li>シート「参加者リスト」を作成し、上記の列構成にする</li>
+          <li>connpassのCSVをインポートしてA・B列を配置</li>
+          <li>メニューの「拡張機能」→「Apps Script」を開く</li>
+          <li><code>Code.gs</code> の内容をエディタのコードへ貼り付ける</li>
+          <li>エディタ左の「＋」→「HTML」でファイルを作成し、名前を <code>Index</code> にする（拡張子は付けない）。<code>Index.html</code> の内容を貼り付ける</li>
+          <li>保存する</li>
+          <li>「デプロイ」→「新しいデプロイ」→ 種類で「ウェブアプリ」を選択
+            <ul>
+              <li>実行ユーザー: <b>自分</b></li>
+              <li>アクセスできるユーザー: 受付端末から開ける範囲で設定（例: 全員）</li>
+            </ul>
+          </li>
+          <li>「デプロイ」を押し、初回は表示される権限の承認を行う</li>
+          <li>発行された <b>ウェブアプリのURL</b> を受付端末のブラウザで開く</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>受付時の操作</h2>
+        <ol>
+          <li>受付端末でウェブアプリのURLを開く</li>
+          <li>「QRコードでチェックイン」を選択</li>
+          <li>カメラの使用を許可し、参加者のQRコードをかざす</li>
+          <li>画面に名前・結果と補助の有無が表示される</li>
+        </ol>
+        <p>別端末で「チェックイン状況を確認」を開くと、随時最新の状況を確認できます。</p>
+      </section>
+
+      <section>
+        <h2>注意事項</h2>
+        <ul>
+          <li>スプレッドシートに紐づいた状態でのみ動作します。</li>
+          <li>カメラを使用するため、ブラウザで開けるHTTPS環境が必要です（GASのウェブアプリはHTTPSで提供されます）。</li>
+          <li>QRの登録番号はURL末尾から1つ前のパス要素を取り出して判定しています。connpassのQR形式が変わった場合は <code>extractRegisteredId()</code> の調整が必要です。</li>
+          <li>状況確認モードは2秒間隔でサーバーに問い合わせるため、多数の端末で同時に開くと負荷が増えます。</li>
+        </ul>
+      </section>
+    </div>
+
+    <p class="repo-link">
+      <a href="https://github.com/paleblue-2032/connpass_check-in-system" target="_blank" rel="noopener noreferrer">github.com/paleblue-2032/connpass_check-in-system →</a>
+    </p>
+  </main>
+</body>
+</html>
