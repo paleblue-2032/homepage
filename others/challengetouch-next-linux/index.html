@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>challengetouch-next-linux | others</title>
+  <meta name="description" content="ベネッセ「チャレンジタッチ NEXT」で、Androidを消さずにLinuxを起動させるまでの記録と一式" />
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../others.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="page">
+    <p class="breadcrumb"><a href="../">← others</a></p>
+
+    <header class="page-head">
+      <h1 class="page-title">challengetouch-next-linux</h1>
+      <p class="page-lead">ベネッセ「チャレンジタッチ NEXT」（TAB-A05-BA1 / MediaTek MT8168）で、Android を消さずに Linux を動かす</p>
+    </header>
+
+    <p class="notice">
+      これは Web 上で動作するコンテンツではありません。実機に Linux を入れるための手順と一式なので、
+      ここでは概要だけ説明します。手順・ビルドスクリプト・カーネルパッチは
+      <a href="https://github.com/paleblue-2032/challengetouch-next-linux" target="_blank" rel="noopener noreferrer">GitHub</a>
+      で公開しています（README だけで第三者が再現できるように書いています）。
+    </p>
+
+    <div class="prose">
+      <section>
+        <h2>概要</h2>
+        <p>
+          Android の <code>boot</code> パーティションは無傷のまま、<code>recovery</code> スロットに自作の
+          Linux（Alpine + GNOME Flashback）を焼き、microSD を永続 rootfs として使う構成です。
+          電源を入れると Linux が起動し、Android に戻したいときは端末上のコマンドで戻せます。
+        </p>
+      </section>
+
+      <section>
+        <h2>できること</h2>
+        <ul>
+          <li>電源投入だけで Linux（GNOME Flashback デスクトップ）が自動起動</li>
+          <li>USB 経由で操作（RNDIS ネットワーク + SSH + ACM シリアル）</li>
+          <li>オンスクリーンキーボード（onboard）で文字入力、タッチ／ペン対応</li>
+          <li>デスクトップのメニューからシャットダウン／再起動（充電器接続中は仕様で起動し直す点に注意）</li>
+          <li>端末上のコマンドで Android へ復帰（<code>boot</code> は未変更なので壊れません）</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>仕組み</h2>
+        <table>
+          <thead>
+            <tr><th>要素</th><th>内容</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>起動スロット</td><td><code>recovery</code> (p15) に Linux。<code>boot</code> (p14) は純正 Android のまま</td></tr>
+            <tr><td>起動の固定</td><td><code>para</code> (p16) の BCB に毎起動 <code>boot-recovery</code> を書き戻す</td></tr>
+            <tr><td>rootfs</td><td>microSD 上の Alpine（リフラッシュ不要で編集できる）</td></tr>
+            <tr><td>カーネル</td><td>MediaTek 4.14 downstream を自前ビルド（パッチは <code>kernel/</code> に同梱）</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>現状・制約</h2>
+        <ul>
+          <li>充電器を挿したままの電源OFF は、いったん消えるがハード仕様で勝手に起動し直す（USB を抜けば確実に切れる）</li>
+          <li>内蔵 Wi-Fi は未対応（ドライバがベンダ提供の別リポジトリのため手元に無い）。ネットワークは USB 経由のみ</li>
+          <li>内蔵スピーカーは調整中（音の経路は通っているが、SoC→コーデックのデジタルリンクが未確立）</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>リンク</h2>
+        <p class="repo-link">
+          リポジトリ: <a href="https://github.com/paleblue-2032/challengetouch-next-linux" target="_blank" rel="noopener noreferrer">paleblue-2032/challengetouch-next-linux</a><br />
+          カーネル元: <a href="https://github.com/coara-chocomaru/mt8168_a05ba_kernel" target="_blank" rel="noopener noreferrer">mt8168_a05ba_kernel</a> /
+          TWRP: <a href="https://github.com/coara-chocomaru/TAB-A05-BA1-Next-TWRP" target="_blank" rel="noopener noreferrer">TAB-A05-BA1-Next-TWRP</a>
+        </p>
+      </section>
+    </div>
+  </main>
+</body>
+</html>
