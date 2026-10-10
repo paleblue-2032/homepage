@@ -1,14 +1,3 @@
-.notice {
-  padding: 16px 18px;
-  margin-bottom: 40px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.02);
-  color: var(--text-muted);
-  font-size: 0.95rem;
-}
-
-.notice code,
 .prose code {
   padding: 0.1em 0.4em;
   border-radius: 5px;
@@ -40,6 +29,10 @@
 
 .prose li {
   margin-bottom: 6px;
+}
+
+.prose b {
+  color: var(--text);
 }
 
 .prose table {
@@ -132,8 +125,57 @@
 #overlay {
   position: absolute;
   inset: 0;
+  z-index: 2;
   width: 100%;
   height: 100%;
+}
+
+/* 視線で押す的。実マウスでは押せないよう pointer-events を切ってある */
+.targets {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(16px, 3vw, 40px);
+  pointer-events: none;
+}
+
+.target {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: clamp(88px, 12vw, 132px);
+  height: clamp(88px, 12vw, 132px);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.target-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.4rem;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  transition: color 0.15s ease;
+}
+
+.target-count {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.target.is-hover {
+  border-color: var(--accent);
+  background: rgba(217, 143, 174, 0.06);
+}
+
+.target.is-hover .target-key {
+  color: var(--accent);
 }
 
 .stage-back {
