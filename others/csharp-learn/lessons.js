@@ -1,5 +1,5 @@
 // 教材データ。本文は HTML、コードは文字列、quiz は選択式。
-// code 内の C# 文字列補間 ( $"{x}" ) は JS テンプレートリテラルと衝突するため \${ とエスケープしている。
+// 各レッスンの確認クイズは 6 問。
 
 // ---- レベルチェック（最初のアンケート/クイズ） ----
 // コードの読み書きだけでなく、コンパイルの仕組み・型の意味・オブジェクト指向の考え方も混ぜて、
@@ -86,8 +86,10 @@ Console.WriteLine("Hello, C#!");`,
     questions: [
       { q: "C# のコードは、実行される前にどうなる？", options: ["そのまま1行ずつ実行される", "コンパイルされて機械が扱える形になる", "HTML に変換される", "自動で Python になる"], answer: 1, explain: "C# はコンパイル言語。書いたコードは .NET が扱える形に変換されてから実行されます。" },
       { q: ".NET とは？", options: ["C# を動かす実行環境", "C# の別名", "OS の名前", "エディタの名前"], answer: 0, explain: "C# のコードは .NET という実行環境の上で動きます。" },
+      { q: "C# は主にどの会社が開発した？", options: ["Microsoft", "Google", "Apple", "Amazon"], answer: 0 },
       { q: "C# のソースファイルの拡張子は？", options: [".cs", ".c#", ".csx", ".sharp"], answer: 0 },
-      { q: "C# が使われている例として近いのは？", options: ["Unity のゲーム開発", "HTML のタグ", "Photoshop のフィルタ専用", "Excel の数式"], answer: 0 }
+      { q: "C# が使われている例として近いのは？", options: ["Unity のゲーム開発", "HTML のタグ", "Photoshop のフィルタ専用", "Excel の数式"], answer: 0 },
+      { q: "C# はどんな開発に向いている？", options: ["ゲーム・Web・業務システムなど幅広く", "Webページの見た目だけ", "表計算だけ", "画像編集だけ"], answer: 0 }
     ]
   },
 
@@ -111,6 +113,8 @@ class Program
       { q: "このプログラムを実行すると、どう表示される？", options: ["Hello, C#! と 3 が2行で出る", "Hello, C#! と 1 + 2 が2行で出る", "エラーになる", "何も表示されない"], answer: 0, explain: "1 + 2 は計算されて 3 になります。" },
       { q: "Console.WriteLine がしていることは？", options: ["文字や値を1行表示して改行", "キーボード入力を待つ", "ファイルに保存する", "変数を消す"], answer: 0 },
       { q: "実行が始まるのはどこから？", options: ["Main メソッド", "using の行", "class の宣言", "ファイルの最後"], answer: 0 },
+      { q: "Console.WriteLine(10 - 3); の表示は？", options: ["7", "10 - 3", "3", "エラーになる"], answer: 0, explain: "式が計算されて 7 が表示されます。" },
+      { q: "using System; は何のために書く？", options: ["Console などを使えるようにする", "変数を宣言する", "画面を作る", "ファイルを消す"], answer: 0 },
       { q: "Console.WriteLine(\"A\"); の直後に Console.Write(\"B\"); を実行すると？", options: ["A で改行され、次の行に B", "A B と1行で出る", "AB と1行で出る", "B で改行され、次の行に A"], answer: 0, explain: "WriteLine は改行、Write は改行しません。" }
     ]
   },
@@ -135,6 +139,8 @@ age = age + 1;     // 21`,
     questions: [
       { q: "var n = 10; のとき、n の型は？", options: ["int", "double", "string", "var という型"], answer: 0, explain: "10 は整数リテラルなので int になります。" },
       { q: "小数を入れる型は？", options: ["double", "int", "bool", "string"], answer: 0 },
+      { q: "var x = 3.14; のとき、x の型は？", options: ["double", "int", "string", "bool"], answer: 0, explain: "3.14 は小数リテラルなので double と推論されます。" },
+      { q: "bool に代入できるのは？", options: ["true か false", "0 か 1 の数値", "\"true\" という文字列", "何でも"], answer: 0 },
       { q: "int x = 5; の後に x = \"hi\"; と書くと？", options: ["エラーになる", "x が hi になる", "x が 0 になる", "hi が数値になる"], answer: 0, explain: "int の箱に文字列は入れられません。型が合わないとコンパイルエラーです。" },
       { q: "string name = ...; に代入できないのは？", options: ["42", "\"abc\"", "\"こんにちは\"", "\"\""], answer: 0 }
     ]
@@ -156,8 +162,10 @@ Console.WriteLine(name.Length);          // 5`,
     questions: [
       { q: "int x = 2; のとき、Console.WriteLine($\"xは{x}です\"); の表示は？", code: `int x = 2;\nConsole.WriteLine($"xは{x}です");`, options: ["xは2です", "xは{x}です", "xはxです", "エラーになる"], answer: 0, explain: "{ } の中は式として評価され、値が埋め込まれます。" },
       { q: "name.Length が表すものは？", options: ["文字数", "文字列の中身", "改行コード", "型の名前"], answer: 0 },
+      { q: "\"abc\".Length の値は？", options: ["3", "abc", "0", "エラーになる"], answer: 0 },
       { q: "文字列の連結に使う演算子は？", options: ["+", "&", ".", "*"], answer: 0 },
-      { q: "\"abc\".Length の値は？", options: ["3", "abc", "0", "エラーになる"], answer: 0 }
+      { q: "文字列補間を使うとき、文字列の先頭に付ける記号は？", options: ["$", "@", "#", "%"], answer: 0 },
+      { q: "\"5\" + 5 のように文字列と数値を + すると？", options: ["\"55\" になる（文字列として連結）", "10 になる", "エラーになる", "5 になる"], answer: 0, explain: "片方が文字列だと、もう片方も文字列に変換されて連結されます。" }
     ]
   },
 
@@ -166,7 +174,8 @@ Console.WriteLine(name.Length);          // 5`,
     section: "値と型",
     title: "計算と演算子",
     body: `
-      <p><code>+ - * / %</code> が使えます。<strong>整数同士の割り算は整数</strong>になり、小数点以下は切り捨てられる点が要注意。</p>`,
+      <p><code>+ - * / %</code> が使えます。<strong>整数同士の割り算は整数</strong>になり、小数点以下は切り捨てられる点が要注意。</p>
+      <p><code>x += 3</code> のような省略記法もあります。</p>`,
     code: `Console.WriteLine(7 + 3);   // 10
 Console.WriteLine(7 / 2);   // 3   ← 整数の割り算！
 Console.WriteLine(7 % 2);   // 1
@@ -177,8 +186,10 @@ c++;                        // 1 増える`,
     questions: [
       { q: "Console.WriteLine(7 / 2); の結果は？", options: ["3", "3.5", "4", "エラーになる"], answer: 0, explain: "int 同士の割り算は整数。小数点以下は切り捨て。" },
       { q: "Console.WriteLine(10 % 3); の結果は？", options: ["1", "3", "3.33", "0"], answer: 0, explain: "% は余り。10 を 3 で割った余りは 1。" },
+      { q: "5 + 3 * 2 の結果は？", options: ["11", "16", "10", "8"], answer: 0, explain: "かけ算が先。5 + 6 = 11。" },
+      { q: "int x = 10; x -= 3; のあと x は？", options: ["7", "13", "3", "10"], answer: 0, explain: "x -= 3 は x = x - 3。" },
       { q: "余りを求める演算子は？", options: ["%", "/", "*", "#"], answer: 0 },
-      { q: "int x = 5; のとき Console.WriteLine(x * 2 + 1); の結果は？", options: ["11", "12", "10", "51"], answer: 0, explain: "かけ算が先に計算されます（5×2+1=11）。" }
+      { q: "int x = 5; のとき Console.WriteLine(x * 2 + 1); の結果は？", options: ["11", "12", "10", "51"], answer: 0 }
     ]
   },
 
@@ -202,7 +213,9 @@ else
     Console.WriteLine("不可");`,
     questions: [
       { q: "score = 75 のとき、表示されるのは？", options: ["良", "優", "不可", "何も表示されない"], answer: 0, explain: "80 以上ではないので次の条件へ。60 以上なので「良」。" },
+      { q: "score = 50 のとき、表示されるのは？", options: ["不可", "良", "優", "何も表示されない"], answer: 0, explain: "80 以上でも 60 以上でもないので else に来ます。" },
       { q: "「a かつ b」を表す書き方は？", options: ["a && b", "a || b", "a !b", "a and b"], answer: 0, explain: "&& が AND、|| が OR、! が NOT。" },
+      { q: "!ok は何を意味する？", options: ["ok が false のとき真になる", "ok が true のとき真になる", "ok を削除する", "ok を足す"], answer: 0 },
       { q: "値が等しいかどうかを比べる演算子は？", options: ["==", "=", "===", "!="], answer: 0, explain: "= は代入、== が比較です。" },
       { q: "int a = 1, b = 2; のとき、if (a > b) の条件は？", options: ["false（else 側が実行される）", "true", "エラーになる", "両方実行される"], answer: 0 }
     ]
@@ -231,7 +244,9 @@ switch (cmd)
 }`,
     questions: [
       { q: "cmd = \"stop\" のとき、表示されるのは？", options: ["停止", "開始", "不明", "エラーになる"], answer: 0 },
+      { q: "この表示は？", code: `int n = 2;\nswitch (n)\n{\n    case 1: Console.WriteLine("A"); break;\n    case 2: Console.WriteLine("B"); break;\n}`, options: ["B", "A", "A と B", "何も表示されない"], answer: 0, explain: "n が 2 なので case 2 が実行されます。" },
       { q: "どの case にも当てはまらないときに実行されるのは？", options: ["default", "else", "finally", "catch"], answer: 0 },
+      { q: "default を書く位置は？", options: ["どこに書いてもよい", "必ず最後", "必ず最初", "書いてはいけない"], answer: 0 },
       { q: "case の最後に break; を書くのを忘れると？", options: ["次の case の処理まで流れ込む", "必ずエラーになる", "何も起きない", "default が消える"], answer: 0 },
       { q: "switch の対象としてよく使う型は？", options: ["int や string", "画像データ", "ファイル", "クラス定義"], answer: 0 }
     ]
@@ -260,7 +275,9 @@ while (n > 0)
       { q: "for (int i = 0; i < 3; i++) で表示される数字を順に並べると？", options: ["0 1 2", "1 2 3", "0 1 2 3", "1 2"], answer: 0, explain: "i は 0 から始まり i < 3 の間だけ回るので 0,1,2。" },
       { q: "while (n > 0) で n = 3 のとき、表示されるのは？", options: ["3 2 1", "1 2 3", "3 2 1 0", "無限ループになる"], answer: 0, explain: "n-- で減らしていき 0 で条件が false。" },
       { q: "for (int i = 0; i < 5; i++) は何回まわる？", options: ["5 回", "4 回", "6 回", "0 回"], answer: 0 },
-      { q: "int s = 0; for (int i = 1; i <= 3; i++) s += i; のあと s は？", options: ["6", "3", "9", "1"], answer: 0, explain: "1+2+3 で 6 になります（s += i は s = s + i）。" }
+      { q: "for (int i = 10; i > 0; i -= 2) は何回まわる？", options: ["5 回", "10 回", "6 回", "2 回"], answer: 0, explain: "10,8,6,4,2 の 5 回です。" },
+      { q: "int s = 0; for (int i = 1; i <= 3; i++) s += i; のあと s は？", options: ["6", "3", "9", "1"], answer: 0, explain: "1+2+3 で 6 になります（s += i は s = s + i）。" },
+      { q: "while (true) { ... } のように条件が常に真だと？", options: ["break などで抜けない限り無限に繰り返す", "1回で終わる", "エラーになる", "0回で終わる"], answer: 0 }
     ]
   },
 
@@ -285,6 +302,8 @@ Console.WriteLine(list.Count);   // 3`,
       { q: "int[] nums = { 10, 20, 30 }; のとき、nums[0] は？", options: ["10", "20", "30", "エラーになる"], answer: 0, explain: "添字は 0 から。" },
       { q: "配列と List の違いは？", options: ["List は要素を追加・削除できる", "配列は個数を後から増やせる", "List の方が必ず速い", "違いはない"], answer: 0 },
       { q: "int[] a = { 1, 2, 3 }; のとき a.Length は？", options: ["3", "2", "4", "0"], answer: 0 },
+      { q: "int[] a = { 1, 2, 3 }; のとき a[3] にアクセスすると？", options: ["エラー（範囲外）", "0 になる", "3 になる", "null になる"], answer: 0, explain: "有効な添字は 0〜2 です。" },
+      { q: "List<int> の要素数を取得するのは？", options: ["Count", "Length", "Size", "Total"], answer: 0, explain: "配列は Length、List は Count です。" },
       { q: "List に要素を追加するメソッドは？", options: ["Add", "Push", "Append", "InsertEnd"], answer: 0 }
     ]
   },
@@ -315,6 +334,8 @@ Greet("Kanon");      // Hi Kanon`,
       { q: "Add(2, 3) の戻り値は？", options: ["5", "23", "2", "エラーになる"], answer: 0 },
       { q: "戻り値の型に void と書くと、どういう意味？", options: ["戻り値がない", "引数がない", "必ず 0 を返す", "非公開という意味"], answer: 0 },
       { q: "static int F() { return 3; } のとき Console.WriteLine(F() + 1); の結果は？", options: ["4", "31", "3", "エラーになる"], answer: 0 },
+      { q: "引数を2つ受け取り、値を返さないメソッドの宣言は？", options: ["static void F(int a, int b)", "static int F(int a, int b)", "void static F", "int F"], answer: 0 },
+      { q: "Add(2, 3) の 2 や 3 のように、呼ぶときに渡す値を何と呼ぶ？", options: ["引数", "戻り値", "型", "プロパティ"], answer: 0 },
       { q: "同じ処理をメソッドにまとめる利点は？", options: ["何度も書かずに再利用できる", "実行が必ず速くなる", "型を書かなくてよくなる", "変数が消える"], answer: 0 }
     ]
   },
@@ -341,8 +362,10 @@ d.Bark();   // ポチ: ワン!`,
     questions: [
       { q: "new Dog() がしていることは？", options: ["Dog のオブジェクトを作る", "Dog を削除する", "Name を必ず初期化する", "Bark を定義する"], answer: 0 },
       { q: "d.Bark() で表示されるのは？", options: ["ポチ: ワン!", "Name: ワン!", "ワン!", "エラーになる"], answer: 0, explain: "{Name} には d の Name（\"ポチ\"）が入ります。" },
+      { q: "d.Name = \"ポチ\"; は何をしている？", options: ["オブジェクト d の Name に値を入れる", "クラス Dog を作る", "メソッドを呼ぶ", "Name を削除する"], answer: 0 },
       { q: "クラスからオブジェクトを作るキーワードは？", options: ["new", "make", "create", "object"], answer: 0 },
-      { q: "クラスの中の変数（例: Name）を何と呼ぶ？", options: ["フィールド", "ローカル変数", "引数", "型"], answer: 0 }
+      { q: "クラスの中の変数（例: Name）を何と呼ぶ？", options: ["フィールド", "ローカル変数", "引数", "型"], answer: 0 },
+      { q: "1つのクラスから作れるオブジェクトの数は？", options: ["何個でも作れる", "1つだけ", "2つまで", "0個"], answer: 0 }
     ]
   },
 
@@ -366,8 +389,10 @@ Console.WriteLine(c.Value);  // 2`,
     questions: [
       { q: "public int Value { get; private set; } のとき、外から Value に代入できる？", options: ["できない", "できる", "読み取りもできない", "文字列を入れられる"], answer: 0, explain: "private set; なので setter はクラスの中からのみ。" },
       { q: "c.Inc() を2回呼んだ後の c.Value は？", options: ["2", "1", "0", "エラーになる"], answer: 0 },
+      { q: "Value++ は Value をどうする？", options: ["1 増やす", "1 減らす", "0 にする", "2倍にする"], answer: 0 },
       { q: "{ get; set; } の形を何と呼ぶ？", options: ["プロパティ", "メソッド", "フィールド", "コンストラクタ"], answer: 0 },
-      { q: "外から勝手に書き換えられないようにすることを？", options: ["カプセル化", "継承", "抽象化", "多態性"], answer: 0 }
+      { q: "外から勝手に書き換えられないようにすることを？", options: ["カプセル化", "継承", "抽象化", "多態性"], answer: 0 },
+      { q: "get; だけ書いたプロパティ（set; なし）はどうなる？", options: ["読み取り専用になる", "書き込み専用になる", "必ずエラーになる", "何も変わらない"], answer: 0 }
     ]
   },
 
@@ -390,7 +415,9 @@ Console.WriteLine(nums.Count(n => n > 3)); // 3`,
     questions: [
       { q: "nums.Where(n => n % 2 == 0) が残すのは？", options: ["偶数だけ", "奇数だけ", "すべて", "何も残らない"], answer: 0 },
       { q: "nums.Count(n => n > 3) の結果は？", options: ["3", "4", "6", "0"], answer: 0, explain: "3 より大きいのは 4, 5, 6 の3つ。" },
+      { q: "nums.Select(n => n * 2) の結果は？", options: ["2, 4, 6, 8, 10, 12", "1, 2, 3, 4, 5, 6", "2, 4, 6", "6, 5, 4, 3, 2, 1"], answer: 0 },
       { q: "それぞれの要素を変換したいときに使うのは？", options: ["Select", "Where", "Count", "OrderBy"], answer: 0 },
+      { q: "LINQ を使うと何が嬉しい？", options: ["絞り込み・変換・集計を簡潔に書ける", "実行が必ず速くなる", "メモリが減る", "型を書かなくてよくなる"], answer: 0 },
       { q: "n => n * 2 の n は何を表す？", options: ["各要素", "リスト全体", "インデックス", "型名"], answer: 0 }
     ]
   },
@@ -413,7 +440,9 @@ catch (FormatException)
       { q: "int.Parse(\"abc\") を try/catch なしで実行すると？", options: ["例外で処理が止まる", "0 になる", "null になる", "自動で直る"], answer: 0 },
       { q: "このコードの表示は？", options: ["数値じゃなかった", "abc", "0", "何も表示されない"], answer: 0 },
       { q: "例外を受け止めるキーワードは？", options: ["catch", "then", "rescue", "handle"], answer: 0 },
-      { q: "catch (FormatException) が捕まえるのは？", options: ["書式エラーの例外", "ゼロ除算の例外", "ファイル未検出の例外", "すべての例外"], answer: 0 }
+      { q: "catch (FormatException) が捕まえるのは？", options: ["書式エラーの例外", "ゼロ除算の例外", "ファイル未検出の例外", "すべての例外"], answer: 0 },
+      { q: "catch を複数書くと？", options: ["例外の種類ごとに分けて処理できる", "エラーになる", "最後の1つだけ有効", "必ず全部が同時に動く"], answer: 0 },
+      { q: "finally の中はいつ実行される？", options: ["例外の有無にかかわらず（後始末など）", "例外のときだけ", "正常終了のときだけ", "実行されない"], answer: 0 }
     ]
   }
 ];
