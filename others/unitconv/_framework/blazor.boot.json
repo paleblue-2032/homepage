@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "unitconv",
   "resources": {
-    "hash": "sha256-T0WtCp3grIu1K+nbDTwk4ZDZ1ZgypCK6mmDzB3WNuMM=",
+    "hash": "sha256-kPecneih6i96s31FY2MCOQpHB0MIp0it5BBMvPT19w4=",
     "jsModuleNative": {
       "dotnet.native.8.0.31.luhhysvu5q.js": "sha256-9NoXeVUo4WNrEqrjAp/y3Yc8NmDcymQkzMGOIbIpGio="
     },
@@ -43,7 +43,7 @@
       "System.Runtime.wasm": "sha256-VQyWnBKFmGCx0KZ5Ieh08LPE1v+84tjVV9y2R+n+9sA=",
       "System.Text.Encodings.Web.wasm": "sha256-1iTGMRZtHrR/EsADYXm0f0MQKiY4Or+e19FTY0Ogrio=",
       "System.Text.Json.wasm": "sha256-3CLkcRm8tXPfTqOkZmKALaU5/eXbDceF+mJFvYRwdyE=",
-      "unitconv.wasm": "sha256-M3+2pNC7IUFtwzTBDnGmKL11aTHi8YfSrvasLvV5OEw="
+      "unitconv.wasm": "sha256-Vmq7iPy9urQDNuEQwOIYILg69Z1VAP41dHLyBL372cs="
     }
   },
   "cacheBootResources": true,
