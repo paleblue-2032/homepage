@@ -43,7 +43,7 @@
   }
   function doneCount() { return LESSONS.filter(function (l) { return isDone(l.id); }).length; }
 
-  function levelForScore(score) { return score <= 1 ? LEVELS[0] : score <= 3 ? LEVELS[1] : LEVELS[2]; }
+  function levelForScore(score) { return score <= 3 ? LEVELS[0] : score <= 6 ? LEVELS[1] : LEVELS[2]; }
   function levelById(id) { return LEVELS.filter(function (l) { return l.id === id; })[0] || null; }
   function startId() {
     var lv = state.level ? levelById(state.level) : null;
@@ -99,7 +99,7 @@
       return header() +
         '<main class="view check">' +
           '<h1 class="title">レベルチェック</h1>' +
-          '<p class="meta">全 ' + PLACEMENT.length + " 問。かんたん→ふつうの順なので、できなくて大丈夫。始める場所を決めるだけです。</p>" +
+          '<p class="meta">全 ' + PLACEMENT.length + " 問。コードの読み書きだけでなく、コンパイルの仕組みやオブジェクト指向も出ます。できなくて大丈夫、始める場所を決めるだけです。</p>" +
           '<div class="bar"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
           '<div class="q" style="margin-top:20px">' +
             '<p class="q-text">Q' + (i + 1) + ". " + esc(q.q) + "</p>" +
@@ -139,7 +139,7 @@
 
     var prompt = "";
     if (!state.level) {
-      prompt = '<a class="prompt" href="#/check" data-action="noop"><strong>まずレベルチェック</strong><span>5問の簡単なチェックで、始める場所を決めましょう →</span></a>';
+      prompt = '<a class="prompt" href="#/check" data-action="noop"><strong>まずレベルチェック</strong><span>' + PLACEMENT.length + '問。コードから仕組み・オブジェクト指向まで、始める場所を決めます →</span></a>';
     }
 
     var lv = state.level ? levelById(state.level) : null;
