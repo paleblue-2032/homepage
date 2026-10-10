@@ -9,7 +9,7 @@
  */
 
 import * as core from "./core.js";
-import { PointerController } from "./controller.js";
+import { PointerController, ARMED, PAUSED, STOPPED } from "./controller.js";
 import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 
 const WASM_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
@@ -51,6 +51,7 @@ const els = {
   hudCam: document.getElementById("hud-cam"),
   hudFps: document.getElementById("hud-fps"),
   hudMiss: document.getElementById("hud-miss"),
+  hudGaze: document.getElementById("hud-gaze"),
   hudHint: document.getElementById("hud-hint"),
 };
 
@@ -139,6 +140,8 @@ const state = {
   predicted: new Float64Array(2),
   gaze: { x: 0.5, y: 0.5 },
   gazePx: { x: 0, y: 0 },
+  gazeEver: false,
+  missRate: 0,
   controller: null,
   controlTimer: 0,
   calibrating: false,
@@ -156,8 +159,13 @@ const state = {
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const setHint = (text) => {
-  els.hudHint.textContent = text || "";
+// 同じ文言を何度も書き直すとちらつくので、変わったときだけ反映する。
+// alert を立てたものは「操作が止まっている理由」なので色を変えて目立たせる。
+const setHint = (text, alert) => {
+  const next = text || "";
+  if (els.hudHint.textContent === next && els.hudHint.classList.contains("is-alert") === !!alert) return;
+  els.hudHint.textContent = next;
+  els.hudHint.classList.toggle("is-alert", !!alert);
 };
 const setPageStatus = (text) => {
   els.pageStatus.textContent = text;
@@ -473,8 +481,9 @@ function frame() {
   }
 
   // 制御側には「観測」として渡すだけ。どう動かすかは controller.js が決める。
-  if (estimated && state.controller) {
-    state.controller.observeGaze(now, now, state.gaze.x, state.gaze.y, 1);
+  if (estimated) {
+    state.gazeEver = true;
+    if (state.controller) state.controller.observeGaze(now, now, state.gaze.x, state.gaze.y, 1);
   }
 
   if (!els.stage.hidden) draw();
@@ -482,12 +491,18 @@ function frame() {
   if (now - state.statsAt >= 400) {
     state.statsAt = now;
     els.hudFps.textContent = state.stream ? state.fps.toFixed(0) : "0";
-    const rate = state.stream ? (state.statMisses / Math.max(state.statFrames, 1)) * 100 : 0;
-    els.hudMiss.textContent = `${rate.toFixed(0)}%`;
+    const rate = state.stream ? state.statMisses / Math.max(state.statFrames, 1) : 0;
+    state.missRate = rate;
+    els.hudMiss.textContent = `${(rate * 100).toFixed(0)}%`;
     state.statFrames = 0;
     state.statMisses = 0;
     renderController();
   }
+}
+
+/** 制御側が「動いている最中」か（一時停止も含む）。停止操作の判定に使う。 */
+function isActive(controller) {
+  return !!controller && (controller.state === ARMED || controller.state === PAUSED);
 }
 
 /** 制御側の状態を HUD に出す。 */
@@ -503,7 +518,22 @@ function renderController() {
   els.hudState.textContent = `${snapshot.state}${reason}`;
   els.hudLatency.textContent =
     snapshot.latencyMs === null || snapshot.latencyMs === undefined ? "--" : `${snapshot.latencyMs.toFixed(0)}ms`;
-  els.track.textContent = snapshot.state === ARMED ? "STOP TRACKING" : "START TRACKING";
+  els.hudGaze.textContent = state.gazeEver
+    ? `${(state.gaze.x * 100).toFixed(0)}, ${(state.gaze.y * 100).toFixed(0)}`
+    : "--, --";
+  els.track.textContent = isActive(controller) ? "STOP TRACKING" : "START TRACKING";
+
+  // 止まっている理由を必ず出す（黙って止まるのを避ける）
+  if (snapshot.state === PAUSED || snapshot.state === STOPPED) {
+    setHint(
+      state.missRate > 0.5
+        ? "顔が検出できていません。カメラに顔が写る明るさ・距離にしてください"
+        : "視線が途切れています。顔を画面に向けてください",
+      true
+    );
+  } else if (snapshot.state === ARMED) {
+    setHint("視線でカーソルが動きます。止めたいときは Esc");
+  }
 }
 
 // --- UI ---
@@ -538,7 +568,7 @@ async function start() {
 
 function startTracking() {
   if (!state.model) {
-    setHint("先に CALIBRATE で9点を注視してください");
+    setHint("キャリブレーションがまだです。CALIBRATE を押して、出てくる9点を順に注視してください", true);
     return;
   }
   resetFilters();
@@ -572,7 +602,7 @@ async function exitStage() {
 }
 
 function toggleTracking() {
-  if (state.controller && state.controller.state === ARMED) stopTracking("停止しました");
+  if (isActive(state.controller)) stopTracking("停止しました");
   else startTracking();
 }
 

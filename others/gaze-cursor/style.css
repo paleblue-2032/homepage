@@ -247,6 +247,10 @@
   accent-color: var(--accent);
 }
 
+.hud-hint.is-alert {
+  color: var(--text);
+}
+
 .hud-hint {
   position: absolute;
   bottom: 78px;

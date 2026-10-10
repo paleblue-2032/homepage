@@ -62,6 +62,7 @@ export class PointerController {
     this.gazeY = 0.5;
     this.gazeAt = -1e9;
     this.gazeSampleAt = -1e9;
+    this.hasGaze = false;
     this.posX = 0;
     this.posY = 0;
     this.recenteredAt = -1e9;
@@ -88,7 +89,8 @@ export class PointerController {
     this.heightPx = heightPx;
     this.state = ARMED;
     this.reason = "";
-    this.gazeAt = nowMs;
+    this.gazeAt = nowMs;   // 観測が来ないまま長引いたら要再アームにするための時計
+    this.hasGaze = false;  // 最初の観測が来るまでは動かさない
     this.dwellReady = false;
     this.dwellProgress = 0;
     this.dwellCooldown = false;
@@ -110,6 +112,7 @@ export class PointerController {
     this.gazeY = y < 0 ? 0 : y > 1 ? 1 : y;
     this.gazeAt = nowMs;
     this.gazeSampleAt = sampleMs;
+    this.hasGaze = true;
     // 短い途切れからは自動で復帰する（長引いたら tick() が stopped にする）
     if (this.state === PAUSED) {
       this.state = ARMED;
@@ -121,7 +124,7 @@ export class PointerController {
   tick(nowMs) {
     if (this.state === DISARMED || this.state === STOPPED) return;
 
-    // 1) 観測が途切れていないか。短ければ一時停止、長ければ要再アームにする。
+    // 1) 観測が長く途切れたら要再アームにする。
     const age = nowMs - this.gazeAt;
     if (age > this.config.failStopAfterMs) {
       this.releaseButtons();
@@ -130,10 +133,13 @@ export class PointerController {
       this.dwellProgress = 0;
       return;
     }
-    if (age > this.config.pauseAfterMs) {
+
+    // 2) まだ一度も観測が来ていない、または短く途切れたなら動かさない。
+    //    arm しただけで既定値の方を向いて飛ばないようにする。
+    if (!this.hasGaze || age > this.config.pauseAfterMs) {
       if (this.state === ARMED) {
         this.state = PAUSED;
-        this.reason = "no gaze";
+        this.reason = this.hasGaze ? "no gaze" : "waiting for gaze";
         this.releaseButtons();
       }
       this.dwellProgress = 0;
