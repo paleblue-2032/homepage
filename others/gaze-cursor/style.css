@@ -178,6 +178,23 @@
   color: var(--accent);
 }
 
+/* PREVIEW 中はカメラの写りを確認できるようにする */
+.stage.is-preview #cam {
+  opacity: 1;
+  filter: none;
+}
+
+.hud-select {
+  max-width: 148px;
+  padding: 3px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+}
+
 .stage-back {
   position: absolute;
   top: 20px;

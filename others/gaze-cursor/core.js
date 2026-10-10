@@ -434,8 +434,13 @@ export class GazeModel {
     let x = 0;
     let y = 0;
     for (let j = 0; j < FEATURE_COUNT; j++) {
-      x += this.coefX[j] * this.scaled[j];
-      y += this.coefY[j] * this.scaled[j];
+      // キャリブレーションで見ていない領域まで外挿すると推定が暴れるので、
+      // 標準化した値を ±4σ で頭打ちにする（平均から 4 標準偏差より外は信じない）。
+      let z = this.scaled[j];
+      if (z > 4) z = 4;
+      else if (z < -4) z = -4;
+      x += this.coefX[j] * z;
+      y += this.coefY[j] * z;
     }
     if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
     out[0] = x < 0 ? 0 : x > 1 ? 1 : x;

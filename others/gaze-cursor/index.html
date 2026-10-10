@@ -53,6 +53,8 @@
         <p>
           止めるときは <code>Esc</code> か、画面下の <code>EXIT</code>。
           <code>Space</code> でも追跡の入／切を切り替えられます。
+          うまく動かないときは <code>PREVIEW</code> でカメラの写りを確認して、必要なら
+          <code>CAMERA</code> で別のカメラに切り替えてください。
         </p>
       </section>
 
@@ -85,7 +87,7 @@
             </tr>
             <tr>
               <td>フェイルストップ</td>
-              <td>観測が 250 ms 途切れたら一時停止、1.5 s 途切れたら要再アームにする</td>
+              <td>観測が 400 ms 途切れたら一時停止、2.5 s 途切れたら要再アームにする</td>
             </tr>
             <tr>
               <td>注視クリック</td>
@@ -121,7 +123,7 @@
           <li>全画面で使う前提です。ウィンドウ表示だと画面座標とページ座標がズレて狙った場所に行きません</li>
           <li>キャリブレーション結果は <code>localStorage</code> に保存するので、姿勢を変えなければ次回は <code>CALIBRATE</code> を飛ばせます</li>
           <li>HUD の <code>LATENCY</code> は「視線サンプルから制御側が動かすまで」の実測値、<code>CAMERA</code> は実際に取れている解像度と fps です。要求した 60fps が来ていないことが多いので、まずここを見てください</li>
-          <li>視線が途切れると一時停止します。顔を見失ったまま 1.5 秒経つと要再アームになるので、<code>START TRACKING</code> を押し直してください</li>
+          <li>視線が途切れると一時停止します。顔を見失ったまま 2.5 秒経つと要再アームになるので、<code>START TRACKING</code> を押し直してください</li>
           <li>遅延や誤差で狙った場所に行かないことがあります。視線だけで長文を書くのはまだつらい精度です</li>
           <li>カメラの映像はブラウザの中でしか使っていません。どこにも送信しません</li>
         </ul>
@@ -150,6 +152,7 @@
       <div class="hud-item"><span class="hud-key">FPS</span><span class="hud-val" id="hud-fps">0</span></div>
       <div class="hud-item"><span class="hud-key">NO FACE</span><span class="hud-val" id="hud-miss">0%</span></div>
       <div class="hud-item"><span class="hud-key">GAZE</span><span class="hud-val" id="hud-gaze">--, --</span></div>
+      <div class="hud-item"><span class="hud-key">EYE</span><span class="hud-val" id="hud-eye">--</span></div>
     </div>
 
     <div class="hud-actions">
@@ -164,6 +167,10 @@
         <input type="range" id="smooth" min="0" max="100" step="1" value="28" />
         <span class="hud-val" id="smooth-val">28</span>
       </label>
+      <label class="hud-slider">CAMERA
+        <select class="hud-select" id="camera"></select>
+      </label>
+      <button type="button" class="action" id="preview">PREVIEW</button>
     </div>
 
     <p class="hud-hint" id="hud-hint"></p>

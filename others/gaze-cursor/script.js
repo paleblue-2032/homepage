@@ -29,6 +29,12 @@ const CFG = {
   smoothHzSlow: 0.4,
   smoothDefault: 28,
   controlHz: 100,
+  // 瞬き中は虹彩の推定が暴れるので、開き具合が普段の 45% を切ったらそのフレームは使わない
+  blinkRatio: 0.45,
+  eyeBaselineFrames: 61,
+  // 観測が途切れてからの猶予。短い取りこぼしで止まらない程度に緩めにしてある。
+  pauseAfterMs: 400,
+  failStopAfterMs: 2500,
 };
 
 const els = {
@@ -52,6 +58,9 @@ const els = {
   hudFps: document.getElementById("hud-fps"),
   hudMiss: document.getElementById("hud-miss"),
   hudGaze: document.getElementById("hud-gaze"),
+  hudEye: document.getElementById("hud-eye"),
+  camera: document.getElementById("camera"),
+  preview: document.getElementById("preview"),
   hudHint: document.getElementById("hud-hint"),
 };
 
@@ -142,6 +151,8 @@ const state = {
   gazePx: { x: 0, y: 0 },
   gazeEver: false,
   missRate: 0,
+  eyeOpen: 0,
+  eyeMedian: null,
   controller: null,
   controlTimer: 0,
   calibrating: false,
@@ -193,19 +204,59 @@ async function ensureLandmarker() {
   return state.landmarker;
 }
 
-async function ensureCamera() {
-  if (state.stream) return;
-  state.stream = await navigator.mediaDevices.getUserMedia({
-    video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } },
-    audio: false,
-  });
+async function openCamera(deviceId) {
+  if (state.stream) {
+    state.stream.getTracks().forEach((track) => track.stop());
+    state.stream = null;
+  }
+  const video = deviceId
+    ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } }
+    : { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } };
+  state.stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
   els.cam.srcObject = state.stream;
   await els.cam.play();
   const settings = state.stream.getVideoTracks()[0].getSettings();
   els.hudCam.textContent = `${settings.width}x${settings.height}@${Math.round(settings.frameRate)}`;
+  await fillCameraList(settings.deviceId);
+}
+
+/** カメラが複数ある環境で、写っている方（顔が映る方）を選べるようにする。 */
+async function fillCameraList(activeId) {
+  try {
+    const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
+    els.camera.innerHTML = "";
+    devices.forEach((device, index) => {
+      const option = document.createElement("option");
+      option.value = device.deviceId;
+      option.textContent = device.label || `camera ${index + 1}`;
+      els.camera.appendChild(option);
+    });
+    if (activeId) els.camera.value = activeId;
+  } catch {
+    /* 列挙できない環境では何もしない */
+  }
 }
 
 // --- 推定（core.js を呼ぶだけ） ---
+
+/**
+ * 目の開き具合（上下の瞼の距離 / 目頭-目尻の距離）。
+ * 瞬きの最中は虹彩の位置が当てにならないので、この値でフレームを捨てる。
+ * 個人差が大きいので絶対値ではなく、普段の値（中央値）に対する比率で見る。
+ */
+function eyeOpenness(landmarks) {
+  let sum = 0;
+  for (const eye of core.EYES) {
+    const upper = landmarks[eye.upper];
+    const lower = landmarks[eye.lower];
+    const from = landmarks[eye.from];
+    const to = landmarks[eye.to];
+    const height = Math.hypot(lower.x - upper.x, lower.y - upper.y);
+    const width = Math.hypot(to.x - from.x, to.y - from.y);
+    if (width > 1e-6) sum += height / width;
+  }
+  return sum / core.EYES.length;
+}
 
 function resetFilters() {
   const cutoff = core.cutoffFromSmoothing(state.smoothSlider, CFG.smoothHzSlow, CFG.smoothHzFast);
@@ -482,8 +533,14 @@ function frame() {
 
   // 制御側には「観測」として渡すだけ。どう動かすかは controller.js が決める。
   if (estimated) {
-    state.gazeEver = true;
-    if (state.controller) state.controller.observeGaze(now, now, state.gaze.x, state.gaze.y, 1);
+    state.eyeOpen = eyeOpenness(landmarks);
+    if (state.eyeOpen > 0) state.eyeMedian.push(state.eyeOpen);
+    const baseline = state.eyeMedian.count >= 5 ? state.eyeMedian.value : 0;
+    const blinking = baseline > 0 && state.eyeOpen < baseline * CFG.blinkRatio;
+    if (!blinking) {
+      state.gazeEver = true;
+      if (state.controller) state.controller.observeGaze(now, now, state.gaze.x, state.gaze.y, 1);
+    }
   }
 
   if (!els.stage.hidden) draw();
@@ -518,19 +575,22 @@ function renderController() {
   els.hudState.textContent = `${snapshot.state}${reason}`;
   els.hudLatency.textContent =
     snapshot.latencyMs === null || snapshot.latencyMs === undefined ? "--" : `${snapshot.latencyMs.toFixed(0)}ms`;
+  els.hudEye.textContent = state.gazeEver ? state.eyeOpen.toFixed(2) : "--";
   els.hudGaze.textContent = state.gazeEver
     ? `${(state.gaze.x * 100).toFixed(0)}, ${(state.gaze.y * 100).toFixed(0)}`
     : "--, --";
   els.track.textContent = isActive(controller) ? "STOP TRACKING" : "START TRACKING";
 
   // 止まっている理由を必ず出す（黙って止まるのを避ける）
-  if (snapshot.state === PAUSED || snapshot.state === STOPPED) {
+  if (snapshot.state === STOPPED) {
     setHint(
       state.missRate > 0.5
-        ? "顔が検出できていません。カメラに顔が写る明るさ・距離にしてください"
-        : "視線が途切れています。顔を画面に向けてください",
+        ? "顔が検出できませんでした。ノートPCなら画面の上に顔が写る位置に座り、明るさを確保してください（PREVIEW で写りを確認できます）"
+        : "視線が途切れたので停止しました。START TRACKING で再開できます",
       true
     );
+  } else if (snapshot.state === PAUSED) {
+    setHint("視線を待っています（HUD の NO FACE と EYE を見てください）", false);
   } else if (snapshot.state === ARMED) {
     setHint("視線でカーソルが動きます。止めたいときは Esc");
   }
@@ -541,7 +601,7 @@ function renderController() {
 async function start() {
   els.start.disabled = true;
   try {
-    await ensureCamera();
+    await openCamera(null);
     await ensureLandmarker();
     els.stage.hidden = false;
     resizeOverlay();
@@ -574,7 +634,11 @@ function startTracking() {
   resetFilters();
   state.medianX.reset();
   state.medianY.reset();
-  state.controller = new PointerController(cursor, { dwellMs: state.dwellMs });
+  state.controller = new PointerController(cursor, {
+    dwellMs: state.dwellMs,
+    pauseAfterMs: CFG.pauseAfterMs,
+    failStopAfterMs: CFG.failStopAfterMs,
+  });
   state.controller.arm(performance.now(), window.innerWidth, window.innerHeight);
   renderController();
   setHint("視線でカーソルが動きます。止めたいときは Esc");
@@ -610,6 +674,20 @@ function bind() {
   els.start.addEventListener("click", start);
   els.calibrate.addEventListener("click", runCalibration);
   els.track.addEventListener("click", toggleTracking);
+
+  els.camera.addEventListener("change", async () => {
+    try {
+      await openCamera(els.camera.value);
+      setHint("カメラを切り替えました");
+    } catch (err) {
+      setHint(`カメラを切り替えられませんでした: ${err && err.message ? err.message : err}`, true);
+    }
+  });
+
+  els.preview.addEventListener("click", () => {
+    els.stage.classList.toggle("is-preview");
+    els.preview.textContent = els.stage.classList.contains("is-preview") ? "PREVIEW ON" : "PREVIEW";
+  });
   els.exit.addEventListener("click", exitStage);
 
   els.dwell.addEventListener("input", () => {
@@ -666,6 +744,7 @@ function init() {
   els.dwellVal.textContent = `${state.dwellMs}ms`;
   els.smoothVal.textContent = els.smooth.value;
   loadCalibration();
+  state.eyeMedian = new core.MedianFilter(CFG.eyeBaselineFrames);
   resetFilters();
   setCalibLabel();
   bind();

@@ -28,6 +28,7 @@ export const DEFAULT_CONFIG = {
   dwellRearmFactor: 2.5,
   dwellCooldownMs: 700,
   maxStepPx: 220,
+  maxTargetSpeedPxPerSec: 2500,
   deadzonePx: 1.5,
   pauseAfterMs: 250,
   failStopAfterMs: 1500,
@@ -60,6 +61,10 @@ export class PointerController {
 
     this.gazeX = 0.5;
     this.gazeY = 0.5;
+    this.targetX = 0;
+    this.targetY = 0;
+    this.targetReady = false;
+    this.lastTickAt = 0;
     this.gazeAt = -1e9;
     this.gazeSampleAt = -1e9;
     this.hasGaze = false;
@@ -91,6 +96,8 @@ export class PointerController {
     this.reason = "";
     this.gazeAt = nowMs;   // 観測が来ないまま長引いたら要再アームにするための時計
     this.hasGaze = false;  // 最初の観測が来るまでは動かさない
+    this.targetReady = false;
+    this.lastTickAt = nowMs;
     this.dwellReady = false;
     this.dwellProgress = 0;
     this.dwellCooldown = false;
@@ -155,8 +162,32 @@ export class PointerController {
       this.latencyMs = median(this.latencies);
     }
 
-    const targetX = this.gazeX * this.widthPx;
-    const targetY = this.gazeY * this.heightPx;
+    // 目標は生の推定値をそのまま使わず、移動速度を制限して追従させる。
+    // 推定が数フレーム飛んでもカーソルがワープしないようにするため。
+    const rawX = this.gazeX * this.widthPx;
+    const rawY = this.gazeY * this.heightPx;
+    if (!this.targetReady) {
+      this.targetX = rawX;
+      this.targetY = rawY;
+      this.targetReady = true;
+    } else {
+      let dtSec = (nowMs - this.lastTickAt) / 1000;
+      if (!(dtSec > 0)) dtSec = 0.01;
+      if (dtSec > 0.1) dtSec = 0.1;
+      const maxStep = this.config.maxTargetSpeedPxPerSec * dtSec;
+      const errorToRaw = Math.hypot(rawX - this.targetX, rawY - this.targetY);
+      if (errorToRaw > maxStep) {
+        const k = maxStep / errorToRaw;
+        this.targetX += (rawX - this.targetX) * k;
+        this.targetY += (rawY - this.targetY) * k;
+      } else {
+        this.targetX = rawX;
+        this.targetY = rawY;
+      }
+    }
+    this.lastTickAt = nowMs;
+    const targetX = this.targetX;
+    const targetY = this.targetY;
 
     // 2) 現在位置。分からなければ原点を取り直す。
     const position = this.actuator.position();
