@@ -105,6 +105,13 @@
     return out + esc(code.slice(last));
   }
   function codeBlock(code) { return '<pre class="code"><code>' + highlight(code) + "</code></pre>"; }
+  // 本文に直接書いたコード（<pre class="code" data-code>）をハイライトする。
+  function decorate(root) {
+    Array.prototype.forEach.call(root.querySelectorAll("pre[data-code]"), function (p) {
+      p.innerHTML = "<code>" + highlight(p.textContent.replace(/^\n+|\n+$/g, "")) + "</code>";
+      p.removeAttribute("data-code");
+    });
+  }
 
   function header() {
     var done = doneCount(), total = LESSONS.length;
@@ -298,7 +305,7 @@
         '<h1 class="title">' + esc(l.title) + "</h1>" +
         '<p class="meta">' + esc(l.section) + " ・ " + correct + " / " + l.questions.length + " 正解" + (done ? " ・ 完了" : "") + "</p>" +
         '<div class="body">' + l.body + "</div>" +
-        codeBlock(l.code) +
+        (l.code ? codeBlock(l.code) : "") +
         '<h2 class="sec-title">確認クイズ（選択 ' + l.questions.filter(function (q) { return q.type !== "input"; }).length + ' 問 / 入力 ' + l.questions.filter(function (q) { return q.type === "input"; }).length + " 問）</h2>" +
         qs +
         '<nav class="pager">' +
@@ -388,6 +395,7 @@
       if (!state.level && !state.check.skipped) { location.replace("#/check"); return; }
       app.innerHTML = renderHome();
     }
+    decorate(app);
     window.scrollTo(0, 0);
   }
 

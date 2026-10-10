@@ -89,6 +89,12 @@ body {
 .body p { margin: 0 0 12px; }
 .body ul { margin: 0 0 12px; padding-left: 1.2em; }
 .body li { margin-bottom: 4px; }
+.body h3 { font-size: 15px; margin: 20px 0 8px; color: var(--ink); }
+.body h3::before { content: "▍"; color: var(--accent); margin-right: 6px; }
+.body table { width: 100%; border-collapse: collapse; margin: 0 0 14px; font-size: 14px; }
+.body th, .body td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+.body th { color: var(--dim); font-weight: 600; background: var(--panel2); }
+.body pre.code { margin: 10px 0 14px; }
 .note { color: var(--dim); font-size: 14px; }
 .note.small { font-size: 12px; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; background: #22222e; padding: 1px 5px; border-radius: 5px; }
