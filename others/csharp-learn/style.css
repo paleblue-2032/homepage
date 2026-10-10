@@ -170,3 +170,43 @@ button { cursor: pointer; font: inherit; }
 }
 .pager > * { flex: 1; }
 .pager .primary { width: auto; }
+
+/* ---- back link to others (site convention) ---- */
+.breadcrumb { max-width: 620px; margin: 0 auto; padding: 14px 16px 0; font-size: 14px; }
+.breadcrumb a { color: var(--dim); text-decoration: none; }
+.breadcrumb a:hover { color: var(--accent); }
+
+/* ---- level badge ---- */
+.badge { font-size: 12px; color: var(--accent); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+
+/* ---- level-check prompt (home) ---- */
+.prompt {
+  display: block;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  border: 1px dashed var(--accent);
+  border-radius: 14px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.prompt strong { display: block; }
+.prompt span { color: var(--dim); font-size: 13px; }
+
+/* ---- level-check result ---- */
+.result {
+  text-align: center;
+  padding: 22px 16px;
+  margin-bottom: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+}
+.result-badge { font-size: 34px; font-weight: 800; color: var(--accent); letter-spacing: 0.02em; }
+.result-name { font-size: 18px; font-weight: 700; margin: 4px 0 10px; }
+.result .note { margin: 6px 0; }
+.check .title { margin-top: 0; }
+
+/* ---- lesson tags ---- */
+.tag { font-size: 11px; margin-left: 8px; padding: 1px 7px; border-radius: 999px; vertical-align: middle; font-weight: 600; }
+.tag.here { background: var(--accent); color: var(--accent-ink); }
+.tag.skip { border: 1px solid var(--line); color: var(--dim); font-weight: 400; }
