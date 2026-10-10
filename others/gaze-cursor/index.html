@@ -28,18 +28,21 @@
       <section>
         <h2>概要</h2>
         <p>
-          画面の9点を順に注視してもらって、そのときの目と虹彩の位置から画面座標への回帰を最小二乗で解きます。
-          あとはそれに今の目の位置を入れて出てきた座標を、制御側が一定周期で追いかけます。
-        </p>
-        <p>
-          カーソルは<b>このページの中だけの仮想カーソル</b>です。OS のカーソルは動かしません。
+          画面の13点を順に注視してもらって、そのときの<b>目の動きと頭の向き</b>から画面座標を推定します。
+          カーソルは<b>このページの中だけの仮想カーソル</b>で、OS のカーソルは動かしません。
           ページ内に5つの的を置いてあるので、視線で運んで注視したままにすると、そこが押されます。
         </p>
         <p>
-          <b>推定側と制御側を分けてあります。</b>推定側は「今どこを見ているか」を出すだけで、
-          カーソルをどう動かすかは決めません。移動量の制限、注視クリック、観測が途切れたときの停止は
-          制御側（<code>controller.js</code>）の仕事で、出力先は Actuator という5つだけの口を通します。
-          差し替えるのはこの口の実装だけで済むので、視覚の前段を変えても制御は壊れません。
+          視線だけだと、頭を動かした瞬間に外れます。そこで478点のランドマーク（z 付き）から
+          <b>頭部の剛体姿勢を Kabsch/Horn 法で解き</b>、虹彩を「キャリブ時に正面を向いていた姿勢」へ
+          写してから眼球特徴を測ります。こうすると眼球の特徴が頭の回転に影響されず、頭を振っても
+          視線の読みが崩れません。両方を特徴量にした回帰なので、
+          <b>「視線＋頭の向き」を統合して判断</b>していることになります。
+        </p>
+        <p>
+          瞬きの最中は虹彩が当てにならないので、そのフレームは眼球特徴を基準値に置き換えます。
+          すると自動的に<b>「頭の向きだけ」での推定に落ちる</b>ので、瞬きでカーソルが飛びません。
+          統合の具合は <code>MODE</code> で <code>視線+頭 / 視線のみ / 頭のみ</code> と切り替えて比べられます。
         </p>
       </section>
 
@@ -47,12 +50,11 @@
         <h2>使い方</h2>
         <ol>
           <li><code>START</code> を押してカメラを許可（全画面になります）</li>
-          <li><code>CALIBRATE</code> を押して、出てくる9点を順に目で追う</li>
+          <li><code>CALIBRATE</code> を押して、出てくる13点を順に目で追う（最初の中央は正面姿勢の基準を取るので頭をまっすぐに）</li>
           <li><code>START TRACKING</code> でカーソルが視線で動きます。的を注視したままにすると押されます</li>
         </ol>
         <p>
-          止めるときは <code>Esc</code> か、画面下の <code>EXIT</code>。
-          <code>Space</code> でも追跡の入／切を切り替えられます。
+          止めるときは <code>Esc</code> か、画面下の <code>EXIT</code>。<code>Space</code> でも追跡の入／切を切り替えられます。
           うまく動かないときは <code>PREVIEW</code> でカメラの写りを確認して、必要なら
           <code>CAMERA</code> で別のカメラに切り替えてください。
         </p>
@@ -66,12 +68,20 @@
           </thead>
           <tbody>
             <tr>
-              <td>視線推定</td>
-              <td>MediaPipe FaceLandmarker（478点）の虹彩ランドマークを、目頭・目尻の線分と上瞼・下瞼の線分に射影して比率化</td>
+              <td>頭部姿勢</td>
+              <td>478点のうち顔全体に散った16点を剛体とみなし、キャリブ時に取った正面の基準フレームへ Kabsch/Horn 法で合わせて yaw/pitch/roll とスケール（距離）を出す。固有ベクトルはべき乗法なので行列分解ライブラリが要らない</td>
+            </tr>
+            <tr>
+              <td>眼球特徴</td>
+              <td>虹彩をその剛体変換で基準フレームへ写してから、目頭-目尻・上瞼-下瞼の線分に射影した比率を取る。頭の回転に依存しない</td>
+            </tr>
+            <tr>
+              <td>統合</td>
+              <td>眼球特徴と sin(yaw)/sin(pitch)/スケールを並べた8項で回帰。瞬き中は眼球特徴を基準値に置き換えて頭の向きだけにフォールバックする</td>
             </tr>
             <tr>
               <td>キャリブレーション</td>
-              <td>9点それぞれで40フレームの中央値を取り、その特徴量から画面座標へのリッジ回帰を x/y 別に解く。外れ値は leave-one-out で1点まで除外</td>
+              <td>13点（中央→四隅→辺）で各40フレームの中央値。リッジ回帰を x/y 別に解き、外れ値は leave-one-out で1点まで除外</td>
             </tr>
             <tr>
               <td>なめらか化</td>
@@ -83,7 +93,7 @@
             </tr>
             <tr>
               <td>制御</td>
-              <td>推定レートとは別に 100 Hz の固定周期で回す。最新の視線と現在位置から移動量を決め、1周期の移動量に上限を入れて比例制御で収束させる</td>
+              <td>推定レートとは別に 100 Hz の固定周期で回す。目標の移動速度を制限してから比例制御で寄せるので、推定が数フレーム飛んでもカーソルがワープしない</td>
             </tr>
             <tr>
               <td>フェイルストップ</td>
@@ -95,7 +105,7 @@
             </tr>
             <tr>
               <td>計測</td>
-              <td>HUD に、制御側の状態、視線サンプルから反映までの遅延、カメラの実解像度と fps、顔検出の取りこぼし率を常に出している</td>
+              <td>HUD に状態、視線、頭の向き(度)、剛体合わせの残差(QUAL)、キャリブ誤差、片道遅延、カメラ設定、fps と取りこぼし率を常時表示</td>
             </tr>
           </tbody>
         </table>
@@ -106,25 +116,26 @@
         <p>
           計算は <code>core.js</code>（推定）と <code>controller.js</code>（制御）に分けてあり、
           どちらも DOM もブラウザ API も触りません。<code>Float64Array</code> と明示的な構造体だけで書いてあるので、
-          C++ なら <code>std::array&lt;double, 6&gt;</code>、Rust なら <code>[f64; 6]</code> にほぼ1対1で写せます
-          （ホットパスでメモリを確保しない、例外を投げない、状態は明示的に持つ、時刻は引数で受け取る、単位を名前に書く、の約束で書いています）。
+          C++ なら <code>std::array&lt;double, 8&gt;</code>、Rust なら <code>[f64; 8]</code> にほぼ1対1で写せます
+          （ホットパスでメモリを確保しない、例外を投げない、状態は明示的に持つ、時刻は引数で受け取る、単位を名前に書く、の約束）。
         </p>
         <p>
-          制御側の出力は <code>position() / move() / click() / release() / recenter()</code> の5つだけです。
-          MCU に載せるときは、この5つをモータ制御に置き換えれば <code>controller.js</code> はそのまま動きます
-          （時刻を引数で受け取るので、タイマ割り込みからそのまま呼べます）。
+          頭部姿勢は SVD を使わず 4x4 の固有ベクトルをべき乗法で出しているので、行列分解のライブラリが要りません。
+          制御側の出力は <code>position() / move() / click() / release() / recenter()</code> の5つだけで、
+          MCU に載せるときはこれをモータ制御に置き換えれば <code>controller.js</code> はそのまま動きます。
         </p>
       </section>
 
       <section>
         <h2>注意・制約</h2>
         <ul>
-          <li>精度は頭の位置に強く依存します。キャリブレーションのときと同じ姿勢を保つのが一番効きます</li>
+          <li>精度は頭の位置とカメラとの距離に依存します。キャリブレーションのときと同じ位置に座るのが一番効きます</li>
           <li>全画面で使う前提です。ウィンドウ表示だと画面座標とページ座標がズレて狙った場所に行きません</li>
-          <li>キャリブレーション結果は <code>localStorage</code> に保存するので、姿勢を変えなければ次回は <code>CALIBRATE</code> を飛ばせます</li>
-          <li>HUD の <code>LATENCY</code> は「視線サンプルから制御側が動かすまで」の実測値、<code>CAMERA</code> は実際に取れている解像度と fps です。要求した 60fps が来ていないことが多いので、まずここを見てください</li>
-          <li>視線が途切れると一時停止します。顔を見失ったまま 2.5 秒経つと要再アームになるので、<code>START TRACKING</code> を押し直してください</li>
-          <li>遅延や誤差で狙った場所に行かないことがあります。視線だけで長文を書くのはまだつらい精度です</li>
+          <li>カメラの解像度を変えると基準フレームが合わなくなるので、<code>CALIBRATE</code> をやり直してください</li>
+          <li>キャリブレーション結果は <code>localStorage</code> に保存します。姿勢を変えたらやり直してください</li>
+          <li>HUD の <code>QUAL</code> は剛体合わせの残差です。0.02 を超えるあたりから怪しいので、明るさや髪・眼鏡の反射を疑ってください</li>
+          <li>視線が途切れると一時停止します。2.5 秒途切れると要再アームになるので <code>START TRACKING</code> を押し直してください</li>
+          <li>まだ実用的な精度ではありません。視線だけで長文を書くのはつらいです</li>
           <li>カメラの映像はブラウザの中でしか使っていません。どこにも送信しません</li>
         </ul>
       </section>
@@ -146,19 +157,26 @@
 
     <div class="hud">
       <div class="hud-item"><span class="hud-key">STATE</span><span class="hud-val" id="hud-state">-</span></div>
+      <div class="hud-item"><span class="hud-key">GAZE</span><span class="hud-val" id="hud-gaze">--, --</span></div>
+      <div class="hud-item"><span class="hud-key">POSE</span><span class="hud-val" id="hud-pose">--, --</span></div>
+      <div class="hud-item"><span class="hud-key">QUAL</span><span class="hud-val" id="hud-quality">--</span></div>
       <div class="hud-item"><span class="hud-key">ERROR</span><span class="hud-val" id="hud-calib">none</span></div>
       <div class="hud-item"><span class="hud-key">LATENCY</span><span class="hud-val" id="hud-latency">--</span></div>
       <div class="hud-item"><span class="hud-key">CAMERA</span><span class="hud-val" id="hud-cam">--</span></div>
-      <div class="hud-item"><span class="hud-key">FPS</span><span class="hud-val" id="hud-fps">0</span></div>
-      <div class="hud-item"><span class="hud-key">NO FACE</span><span class="hud-val" id="hud-miss">0%</span></div>
-      <div class="hud-item"><span class="hud-key">GAZE</span><span class="hud-val" id="hud-gaze">--, --</span></div>
-      <div class="hud-item"><span class="hud-key">EYE</span><span class="hud-val" id="hud-eye">--</span></div>
+      <div class="hud-item"><span class="hud-key">FPS/NOFACE</span><span class="hud-val" id="hud-stats">0 / 0%</span></div>
     </div>
 
     <div class="hud-actions">
       <button type="button" class="action" id="calibrate">CALIBRATE</button>
       <button type="button" class="action" id="track">START TRACKING</button>
       <button type="button" class="action" id="exit">EXIT</button>
+      <label class="hud-slider">MODE
+        <select class="hud-select" id="mode">
+          <option value="both">視線+頭</option>
+          <option value="gaze">視線のみ</option>
+          <option value="head">頭のみ</option>
+        </select>
+      </label>
       <label class="hud-slider">DWELL
         <input type="range" id="dwell" min="400" max="1800" step="50" value="900" />
         <span class="hud-val" id="dwell-val">900ms</span>

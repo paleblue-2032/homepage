@@ -1,106 +1,359 @@
 /**
- * gaze-cursor の推定側コア（移植可能な部分）。
+ * gaze-cursor の推定側コア（移植可能な部分）v2。
  *
- * ここには「目のランドマーク → 画面座標」の推定と、その平滑化だけを置く。
- * DOM・カメラ・通信・タイマーに一切触らないので、C++ / Rust へはこのファイルの
- * 構造体と関数をそのまま写せる。プラットフォーム側（script.js）はこのファイルを
- * 呼ぶだけにしてある。
+ * v1 は「虹彩の比率＋両目間距離」を画像座標のまま回帰していたため、頭が動くと
+ * 特徴量が一緒に動いてしまい、頭を振ると破綻した。v2 は:
  *
- * 移植しやすくするための約束:
- *   1. ホットパスでメモリを確保しない。作業配列は呼び出し側が用意して渡す。
- *   2. 失敗は戻り値で返す（例外を投げない）。
- *   3. 状態は明示的に持つ（クロージャやグローバルに隠さない）。
- *   4. 単位を名前に書く（Ms / Px / Ratio / Norm / Hz）。
- *   5. async / Promise を使わない（コアは同期のみ）。
+ *   1. 478点ランドマーク（z 付き）から剛体の顔モデルを Kabsch/Horn 法で当てて
+ *      頭部姿勢（yaw/pitch/roll）とスケール（距離）を求める
+ *   2. 虹彩をその剛体変換で「基準フレーム」（キャリブ時に正面を向いていた姿勢）へ
+ *      写してから比率を取る。こうすると眼球特徴が頭の回転に依存しない
+ *   3. 頭部姿勢と眼球特徴の両方を特徴量にして回帰する
+ *      → 視線が読めないフレーム（瞬き）は眼球特徴を基準値に置き換えれば
+ *        自動的に「頭の向きだけ」での推定に落ちる（融合）
  *
- * C++ / Rust への対応の目安:
- *   Float64Array(6)              -> std::array<double,6> / [f64; 6]
- *   class OneEuroFilter          -> struct OneEuroFilter + impl
- *   calibrate(points, ...)       -> fn calibrate(&[CalibrationPoint], ...) -> Calibration
- *   { mean, std, coefX, coefY }  -> 同じ意味の構造体
+ * DOM もブラウザ API もカメラも触らない。移植のための約束は v1 と同じ:
+ *   ホットパスで確保しない / 例外を投げない / 状態は明示的に持つ /
+ *   単位を名前に書く（Normalized / Px / Ratio / Deg / Hz）/ async なし。
+ *
+ * 座標系: 画像は x が幅・y が高さの正規化なので、そのままでは等方でない。
+ * 3D を扱うので「画像の高さ」を単位に揃えた等方座標に変換してから使う
+ * （X = x * aspect, Y = y, Z = z * aspect。aspect = 幅/高さ）。
  */
 
 // ---------------------------------------------------------------------------
-// ランドマーク → 特徴量
+// 使うランドマーク
 // ---------------------------------------------------------------------------
+
+/**
+ * 頭部姿勢を解くための剛体ランドマーク。顔全体に散らばっていて、
+ * 表情で大きく動かない点を選んである（目頭・目尻 / 鼻筋 / 鼻先 / 顎 / 頬 / 口角 / 額）。
+ */
+export const POSE_LANDMARKS = [
+  33, 133, 362, 263, // 目頭・目尻
+  168, 6, 197, 195, // 鼻筋
+  1, 4, // 鼻先
+  152, // 顎先
+  234, 454, // 頬
+  61, 291, // 口角
+  10, // 額
+];
+export const POSE_COUNT = POSE_LANDMARKS.length;
+
+/** 眼球特徴を基準フレームで測るために必要な瞼のランドマーク。 */
+export const LID_LANDMARKS = [159, 145, 386, 374];
+/** 基準フレームとして保存する点数（剛体 + 瞼）。 */
+export const REFERENCE_COUNT = POSE_COUNT + LID_LANDMARKS.length;
+
+/** 回帰に使う基底の数: [1, h, v, h^2, v^2, sin(yaw), sin(pitch), scale]。 */
+export const FEATURE_COUNT = 8;
+
+/** 特徴量の添字。 */
+export const F_BIAS = 0;
+export const F_EYE_H = 1;
+export const F_EYE_V = 2;
+export const F_EYE_H2 = 3;
+export const F_EYE_V2 = 4;
+export const F_YAW = 5;
+export const F_PITCH = 6;
+export const F_SCALE = 7;
 
 export const LANDMARK_COUNT = 478;
 
-/** 生の特徴量の数（h, v, scale）。 */
-export const RAW_FEATURE_COUNT = 3;
+function clamp01(value) {
+  return value < 0 ? 0 : value > 1 ? 1 : value;
+}
 
-/** 回帰に使う基底の数（1, h, v, h^2, v^2, scale）。9点に対して6項で余裕を持たせる。 */
-export const FEATURE_COUNT = 6;
+// 基準フレーム内でのランドマーク添字（REFERENCE の並びは POSE → LID）
+const REF_INDEX = {};
+POSE_LANDMARKS.forEach((index, i) => { REF_INDEX[index] = i; });
+LID_LANDMARKS.forEach((index, i) => { REF_INDEX[index] = POSE_COUNT + i; });
 
-/**
- * 虹彩の位置を「目頭-目尻」と「上瞼-下瞼」の線分に射影した比率で表す。
- * 添字は MediaPipe FaceLandmarker の 478 点モデル。33↔263 / 133↔362 が鏡像の
- * 対応なので、2つ目の目は順序を逆にして、両目の軸が画像上で同じ向き（x が増える
- * 向き）になるようにしている。揃えないと左右が逆向きに動いて平均で打ち消し合う。
- */
-export const EYES = [
-  { from: 33, to: 133, upper: 159, lower: 145, iris: 468 },
-  { from: 362, to: 263, upper: 386, lower: 374, iris: 473 },
+/** 左右の目。軸は基準フレーム（正面）での並びなので、画像の向きを気にしなくてよい。 */
+const EYES = [
+  { iris: 468, from: REF_INDEX[33], to: REF_INDEX[133], upper: REF_INDEX[159], lower: REF_INDEX[145] },
+  { iris: 473, from: REF_INDEX[362], to: REF_INDEX[263], upper: REF_INDEX[386], lower: REF_INDEX[374] },
 ];
 
-/** 線分 a→b 上への点 p の射影比。a で 0、b で 1。軸に直交するズレは無視する。 */
-export function projectRatio(px, py, ax, ay, bx, by) {
-  const vx = bx - ax;
-  const vy = by - ay;
-  const len2 = vx * vx + vy * vy;
-  if (len2 < 1e-9) return 0.5;
-  return ((px - ax) * vx + (py - ay) * vy) / len2;
+/** 目の開き具合を測るための上下の瞼（左右）。 */
+export const EYE_OPEN = [
+  { upper: 159, lower: 145, from: 33, to: 133 },
+  { upper: 386, lower: 374, from: 362, to: 263 },
+];
+
+// ---------------------------------------------------------------------------
+// ランドマーク → クラウド（等方座標）
+// ---------------------------------------------------------------------------
+
+function putPoint(out, index, landmark, aspect) {
+  out[index * 3] = landmark.x * aspect;
+  out[index * 3 + 1] = landmark.y;
+  out[index * 3 + 2] = (landmark.z || 0) * aspect;
+}
+
+/** 頭部姿勢を解くための剛体クラウド。out は POSE_COUNT*3。 */
+export function extractPoseCloud(landmarks, count, aspect, out) {
+  if (count < LANDMARK_COUNT) return false;
+  for (let i = 0; i < POSE_COUNT; i++) putPoint(out, i, landmarks[POSE_LANDMARKS[i]], aspect);
+  return true;
+}
+
+/** 基準フレーム用のクラウド（剛体 + 瞼）。out は REFERENCE_COUNT*3。 */
+export function extractReferenceCloud(landmarks, count, aspect, out) {
+  if (!extractPoseCloud(landmarks, count, aspect, out)) return false;
+  for (let i = 0; i < LID_LANDMARKS.length; i++) {
+    putPoint(out, POSE_COUNT + i, landmarks[LID_LANDMARKS[i]], aspect);
+  }
+  return true;
 }
 
 /**
- * ランドマーク列から生の特徴量を作る。out は長さ RAW_FEATURE_COUNT。
- *   out[0] = h  （両目の虹彩水平比率の平均）
- *   out[1] = v  （両目の虹彩垂直比率の平均）
- *   out[2] = scale（両目内側の距離。カメラへの寄り引きを表す）
- * ランドマークが足りない / 縮退している場合は false を返す。
+ * 目の開き具合（上下の瞼の距離 / 目頭-目尻の距離）。
+ * 瞬きの最中は虹彩の位置が当てにならないので、この値でフレームを捨てる。
+ * 個人差が大きいので絶対値ではなく普段の値（中央値）との比で使う。
  */
-export function extractFeatures(landmarks, count, out) {
+export function eyeOpenness(landmarks, count, aspect, out) {
   if (count < LANDMARK_COUNT) return false;
+  let sum = 0;
+  for (let e = 0; e < EYE_OPEN.length; e++) {
+    const eye = EYE_OPEN[e];
+    const upper = landmarks[eye.upper];
+    const lower = landmarks[eye.lower];
+    const from = landmarks[eye.from];
+    const to = landmarks[eye.to];
+    const height = Math.hypot((lower.x - upper.x) * aspect, lower.y - upper.y);
+    const width = Math.hypot((to.x - from.x) * aspect, to.y - from.y);
+    if (width > 1e-6) sum += height / width;
+  }
+  out[0] = sum / EYE_OPEN.length;
+  return true;
+}
 
+// ---------------------------------------------------------------------------
+// 剛体合わせ（Kabsch / Horn のクォータニオン法）
+// ---------------------------------------------------------------------------
+
+const scratch = {
+  centroidRef: new Float64Array(3),
+  centroidObs: new Float64Array(3),
+  covariance: new Float64Array(9),
+  normal: new Float64Array(16),
+};
+
+function centroid(cloud, count, out) {
+  let x = 0;
+  let y = 0;
+  let z = 0;
+  for (let i = 0; i < count; i++) {
+    x += cloud[i * 3];
+    y += cloud[i * 3 + 1];
+    z += cloud[i * 3 + 2];
+  }
+  out[0] = x / count;
+  out[1] = y / count;
+  out[2] = z / count;
+  return out;
+}
+
+/**
+ * 基準クラウド → 観測クラウド の最良の相似変換（回転 R・スケール s・平行移動 t）を求める。
+ * Horn の方法: 4x4 の対称行列の最大固有ベクトル（＝クォータニオン）をべき乗法で出す。
+ * SVD が要らないので移植しやすい（3x3 の固有分解を書かなくて済む）。
+ *
+ * outRotation は 9 要素（行優先）、outTranslation は 3 要素。戻り値はスケール。
+ */
+export function solveRigidTransform(reference, observed, count, outRotation, outTranslation) {
+  centroid(reference, count, scratch.centroidRef);
+  centroid(observed, count, scratch.centroidObs);
+
+  const rc = scratch.centroidRef;
+  const oc = scratch.centroidObs;
+  const cov = scratch.covariance;
+  cov.fill(0);
+
+  let refEnergy = 0;
+  let obsEnergy = 0;
+  for (let i = 0; i < count; i++) {
+    const rx = reference[i * 3] - rc[0];
+    const ry = reference[i * 3 + 1] - rc[1];
+    const rz = reference[i * 3 + 2] - rc[2];
+    const ox = observed[i * 3] - oc[0];
+    const oy = observed[i * 3 + 1] - oc[1];
+    const oz = observed[i * 3 + 2] - oc[2];
+    refEnergy += rx * rx + ry * ry + rz * rz;
+    obsEnergy += ox * ox + oy * oy + oz * oz;
+    // S_ab = Σ (基準)_a (観測)_b。この向きでないと回転が逆になる（符号規約）
+    cov[0] += rx * ox; cov[1] += rx * oy; cov[2] += rx * oz;
+    cov[3] += ry * ox; cov[4] += ry * oy; cov[5] += ry * oz;
+    cov[6] += rz * ox; cov[7] += rz * oy; cov[8] += rz * oz;
+  }
+
+  const sxx = cov[0], sxy = cov[1], sxz = cov[2];
+  const syx = cov[3], syy = cov[4], syz = cov[5];
+  const szx = cov[6], szy = cov[7], szz = cov[8];
+
+  const N = scratch.normal;
+  N[0] = sxx + syy + szz; N[1] = syz - szy; N[2] = szx - sxz; N[3] = sxy - syx;
+  N[4] = syz - szy; N[5] = sxx - syy - szz; N[6] = sxy + syx; N[7] = szx + sxz;
+  N[8] = szx - sxz; N[9] = sxy + syx; N[10] = -sxx + syy - szz; N[11] = syz + szy;
+  N[12] = sxy - syx; N[13] = szx + sxz; N[14] = syz + szy; N[15] = -sxx - syy + szz;
+
+  // べき乗法。初期値をいくつか試して、いちばん伸びる固有ベクトルを採る。
+  let best = null;
+  const seeds = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]];
+  for (let s = 0; s < seeds.length; s++) {
+    let w = seeds[s][0];
+    let x = seeds[s][1];
+    let y = seeds[s][2];
+    let z = seeds[s][3];
+    let norm = Math.hypot(w, x, y, z) || 1;
+    w /= norm; x /= norm; y /= norm; z /= norm;
+    let magnitude = 0;
+    for (let iteration = 0; iteration < 120; iteration++) {
+      const nw = N[0] * w + N[1] * x + N[2] * y + N[3] * z;
+      const nx = N[4] * w + N[5] * x + N[6] * y + N[7] * z;
+      const ny = N[8] * w + N[9] * x + N[10] * y + N[11] * z;
+      const nz = N[12] * w + N[13] * x + N[14] * y + N[15] * z;
+      magnitude = Math.hypot(nw, nx, ny, nz);
+      if (!(magnitude > 1e-12)) break;
+      w = nw / magnitude; x = nx / magnitude; y = ny / magnitude; z = nz / magnitude;
+    }
+    if (magnitude > 1e-12 && (!best || magnitude > best.magnitude)) {
+      best = { magnitude, w, x, y, z };
+    }
+  }
+
+  const w = best ? best.w : 1;
+  const x = best ? best.x : 0;
+  const y = best ? best.y : 0;
+  const z = best ? best.z : 0;
+
+  outRotation[0] = w * w + x * x - y * y - z * z;
+  outRotation[1] = 2 * (x * y - w * z);
+  outRotation[2] = 2 * (x * z + w * y);
+  outRotation[3] = 2 * (x * y + w * z);
+  outRotation[4] = w * w - x * x + y * y - z * z;
+  outRotation[5] = 2 * (y * z - w * x);
+  outRotation[6] = 2 * (x * z - w * y);
+  outRotation[7] = 2 * (y * z + w * x);
+  outRotation[8] = w * w - x * x - y * y + z * z;
+
+  const scale = refEnergy > 1e-12 ? Math.sqrt(obsEnergy / refEnergy) : 1;
+  const R = outRotation;
+  outTranslation[0] = oc[0] - scale * (R[0] * rc[0] + R[1] * rc[1] + R[2] * rc[2]);
+  outTranslation[1] = oc[1] - scale * (R[3] * rc[0] + R[4] * rc[1] + R[5] * rc[2]);
+  outTranslation[2] = oc[2] - scale * (R[6] * rc[0] + R[7] * rc[1] + R[8] * rc[2]);
+  return scale;
+}
+
+/** 合わせ残差（基準を変換して観測と比べた RMS）。頭部姿勢の品質指標に使う。 */
+export function rigidResidual(reference, observed, count, rotation, translation, scale) {
+  const R = rotation;
+  const t = translation;
+  let sum = 0;
+  for (let i = 0; i < count; i++) {
+    const rx = reference[i * 3];
+    const ry = reference[i * 3 + 1];
+    const rz = reference[i * 3 + 2];
+    const px = scale * (R[0] * rx + R[1] * ry + R[2] * rz) + t[0];
+    const py = scale * (R[3] * rx + R[4] * ry + R[5] * rz) + t[1];
+    const pz = scale * (R[6] * rx + R[7] * ry + R[8] * rz) + t[2];
+    const dx = px - observed[i * 3];
+    const dy = py - observed[i * 3 + 1];
+    const dz = pz - observed[i * 3 + 2];
+    sum += dx * dx + dy * dy + dz * dz;
+  }
+  return Math.sqrt(sum / count);
+}
+
+/** 回転行列から yaw/pitch/roll [度]。R = Rz(roll) Ry(yaw) Rx(pitch) の並びで読む。 */
+export function eulerFromRotation(rotation, out) {
+  const R = rotation;
+  const yaw = Math.asin(Math.max(-1, Math.min(1, -R[6])));
+  const pitch = Math.atan2(R[7], R[8]);
+  const roll = Math.atan2(R[3], R[0]);
+  out[0] = (yaw * 180) / Math.PI;
+  out[1] = (pitch * 180) / Math.PI;
+  out[2] = (roll * 180) / Math.PI;
+  return out;
+}
+
+/** 等方座標の点を基準フレームへ写す（回転とスケールを戻す）。out は長さ3。 */
+export function toReferenceFrame(point, rotation, translation, scale, out) {
+  const R = rotation;
+  const dx = point[0] - translation[0];
+  const dy = point[1] - translation[1];
+  const dz = point[2] - translation[2];
+  const inv = scale > 1e-9 ? 1 / scale : 1;
+  out[0] = (R[0] * dx + R[3] * dy + R[6] * dz) * inv;
+  out[1] = (R[1] * dx + R[4] * dy + R[7] * dz) * inv;
+  out[2] = (R[2] * dx + R[5] * dy + R[8] * dz) * inv;
+  return out;
+}
+
+/** 3D 点をクラウド内の線分 a→b に射影した比。a で 0、b で 1。 */
+export function projectRatio3D(px, py, pz, cloud, aIndex, bIndex) {
+  const ax = cloud[aIndex * 3];
+  const ay = cloud[aIndex * 3 + 1];
+  const az = cloud[aIndex * 3 + 2];
+  const vx = cloud[bIndex * 3] - ax;
+  const vy = cloud[bIndex * 3 + 1] - ay;
+  const vz = cloud[bIndex * 3 + 2] - az;
+  const len2 = vx * vx + vy * vy + vz * vz;
+  if (len2 < 1e-12) return 0.5;
+  return ((px - ax) * vx + (py - ay) * vy + (pz - az) * vz) / len2;
+}
+
+const irisScratch = new Float64Array(3);
+
+/** ランドマーク1点を等方座標（X = x*aspect, Y = y, Z = z*aspect）にして out[0..2] に書く。 */
+export function landmarkToIsotropic(landmark, aspect, out) {
+  out[0] = landmark.x * aspect;
+  out[1] = landmark.y;
+  out[2] = (landmark.z || 0) * aspect;
+  return out;
+}
+
+/**
+ * 頭の回転に依存しない眼球特徴（基準フレームでの虹彩位置の比）を出す。
+ * iris は等方座標の点（landmarkToIsotropic を通したもの）。
+ * out[0] = h（目頭→目尻）、out[1] = v（上瞼→下瞼）。
+ */
+export function extractEyeFeatures(irisLeft, irisRight, rotation, translation, scale, reference, out) {
+  const irises = [irisLeft, irisRight];
   let hSum = 0;
   let vSum = 0;
   for (let e = 0; e < EYES.length; e++) {
     const eye = EYES[e];
-    const iris = landmarks[eye.iris];
-    const from = landmarks[eye.from];
-    const to = landmarks[eye.to];
-    const upper = landmarks[eye.upper];
-    const lower = landmarks[eye.lower];
-    hSum += projectRatio(iris.x, iris.y, from.x, from.y, to.x, to.y);
-    vSum += projectRatio(iris.x, iris.y, upper.x, upper.y, lower.x, lower.y);
+    toReferenceFrame(irises[e], rotation, translation, scale, irisScratch);
+    hSum += projectRatio3D(irisScratch[0], irisScratch[1], irisScratch[2], reference, eye.from, eye.to);
+    vSum += projectRatio3D(irisScratch[0], irisScratch[1], irisScratch[2], reference, eye.upper, eye.lower);
   }
-
-  const inner = landmarks[133];
-  const outer = landmarks[33];
-  const scale = Math.hypot(outer.x - inner.x, outer.y - inner.y);
-  if (!(scale > 1e-6)) return false;
-
   out[0] = hSum / EYES.length;
   out[1] = vSum / EYES.length;
-  out[2] = scale;
   return true;
 }
 
-/** 生の特徴量 → 回帰の基底。out は長さ FEATURE_COUNT。 */
-export function fillBasis(feature, out) {
-  const h = feature[0];
-  const v = feature[1];
-  out[0] = 1;
-  out[1] = h;
-  out[2] = v;
-  out[3] = h * h;
-  out[4] = v * v;
-  out[5] = feature[2];
+/**
+ * 特徴量 → 回帰の基底。out は長さ FEATURE_COUNT。
+ * pose は [yawDeg, pitchDeg]、eye は [h, v]、scale は剛体合わせのスケール。
+ */
+export function fillBasis(pose, eye, scale, out) {
+  const h = eye[0];
+  const v = eye[1];
+  out[F_BIAS] = 1;
+  out[F_EYE_H] = h;
+  out[F_EYE_V] = v;
+  out[F_EYE_H2] = h * h;
+  out[F_EYE_V2] = v * v;
+  out[F_YAW] = Math.sin((pose[0] * Math.PI) / 180);
+  out[F_PITCH] = Math.sin((pose[1] * Math.PI) / 180);
+  out[F_SCALE] = scale;
   return out;
 }
 
 // ---------------------------------------------------------------------------
-// スカラー用のフィルタ
+// フィルタ
 // ---------------------------------------------------------------------------
 
 /** 遮断周波数 cutoffHz の一次ローパスの係数。dtSec はサンプル間隔 [s]。 */
@@ -111,9 +364,7 @@ export function smoothingFactor(dtSec, cutoffHz) {
 
 /**
  * 1€ filter (Casiez et al. 2012) の1次元版。
- * 速く動いているときは遮断周波数を上げて遅れを減らし、止まっているときは下げて
- * 震えを消す。固定の指数移動平均だと「震えを消す」と「遅れを減らす」が同じ
- * パラメータで綱引きになるが、これは速度で自動的に切り替わる。
+ * 速く動いているときは遮断周波数を上げて遅れを減らし、止まっているときは下げて震えを消す。
  */
 export class OneEuroFilter {
   constructor(minCutoffHz, beta, dCutoffHz) {
@@ -134,7 +385,6 @@ export class OneEuroFilter {
     this.minCutoffHz = hz;
   }
 
-  /** next を時刻 timeMs [ms] で与える。戻り値は平滑化された値。 */
   filter(next, timeMs) {
     if (!this.started) {
       this.value = next;
@@ -142,12 +392,10 @@ export class OneEuroFilter {
       this.started = true;
       return next;
     }
-    // dt が 0 や異常に大きい場合でも破綻しないよう挟む
     let dtSec = (timeMs - this.timeMs) / 1000;
     if (!(dtSec > 1e-3)) dtSec = 1e-3;
     if (dtSec > 0.1) dtSec = 0.1;
     this.timeMs = timeMs;
-
     const rate = (next - this.value) / dtSec;
     this.rate += smoothingFactor(dtSec, this.dCutoffHz) * (rate - this.rate);
     const cutoffHz = this.minCutoffHz + this.beta * Math.abs(this.rate);
@@ -156,10 +404,7 @@ export class OneEuroFilter {
   }
 }
 
-/**
- * 直近 size サンプルの中央値。リングバッファと作業配列を確保済みなので
- * push の中でメモリを確保しない。瞬きなどによる単発のスパイク落としに使う。
- */
+/** 直近 size サンプルの中央値。作業配列を確保済みなので push でメモリを確保しない。 */
 export class MedianFilter {
   constructor(size) {
     this.size = size;
@@ -180,7 +425,6 @@ export class MedianFilter {
     this.buffer[this.index] = v;
     this.index = (this.index + 1) % this.size;
     if (this.count < this.size) this.count++;
-
     for (let i = 0; i < this.count; i++) this.work[i] = this.buffer[i];
     for (let i = 1; i < this.count; i++) {
       const x = this.work[i];
@@ -199,18 +443,13 @@ export class MedianFilter {
 
 /** SMOOTH スライダー (0-100) → 静止時の遮断周波数 [Hz]。小さいほど平滑化が強い。 */
 export function cutoffFromSmoothing(slider, minCutoffHz, maxCutoffHz) {
-  const t = slider < 0 ? 0 : slider > 100 ? 100 : slider / 100;
-  return maxCutoffHz + (minCutoffHz - maxCutoffHz) * t;
+  return maxCutoffHz + (minCutoffHz - maxCutoffHz) * clamp01(slider / 100);
 }
 
 // ---------------------------------------------------------------------------
-// キャリブレーション（バッチ処理）
+// キャリブレーション（リッジ回帰 + leave-one-out 外れ値除去）
 // ---------------------------------------------------------------------------
 
-/**
- * 各特徴量を平均0・標準偏差1に正規化する。列0（バイアス項）は触らない。
- * 正規化しないとリッジの効き方が特徴量のスケールに引きずられる。
- */
 export function makeScaler(rows, count) {
   const mean = new Float64Array(FEATURE_COUNT);
   const std = new Float64Array(FEATURE_COUNT);
@@ -230,7 +469,6 @@ export function makeScaler(rows, count) {
   return { mean, std };
 }
 
-/** 正規化した行を out に書く（確保なし）。 */
 export function applyScaler(scaler, row, out) {
   for (let j = 0; j < FEATURE_COUNT; j++) {
     out[j] = j === 0 ? 1 : (row[j] - scaler.mean[j]) / scaler.std[j];
@@ -238,11 +476,7 @@ export function applyScaler(scaler, row, out) {
   return out;
 }
 
-/**
- * リッジ回帰を正規方程式 + ガウス・ジョルダンで解く。
- * rows は count 行 FEATURE_COUNT 列（正規化済み）、targets は長さ count。
- * 戻り値は長さ FEATURE_COUNT の係数。
- */
+/** リッジ回帰を正規方程式 + ガウス・ジョルダンで解く。 */
 export function solveRidge(rows, targets, count, lambda) {
   const m = FEATURE_COUNT;
   const mat = [];
@@ -290,7 +524,6 @@ export function solveRidge(rows, targets, count, lambda) {
   return coef;
 }
 
-/** points から線形モデル（正規化 + x/y の係数）を作る。indices が null なら全点。 */
 export function fitModel(points, indices, count, lambda) {
   const rawRows = [];
   const targetsX = new Float64Array(count);
@@ -301,7 +534,6 @@ export function fitModel(points, indices, count, lambda) {
     targetsX[i] = point.x;
     targetsY[i] = point.y;
   }
-
   const scaler = makeScaler(rawRows, count);
   const normalized = [];
   for (let i = 0; i < count; i++) {
@@ -309,7 +541,6 @@ export function fitModel(points, indices, count, lambda) {
     applyScaler(scaler, rawRows[i], outRow);
     normalized.push(outRow);
   }
-
   return {
     scaler,
     coefX: solveRidge(normalized, targetsX, count, lambda),
@@ -317,18 +548,13 @@ export function fitModel(points, indices, count, lambda) {
   };
 }
 
-/**
- * leave-one-out の各点誤差。out は長さ count。
- * 1点だけ大きく外していると、残差の中央値まで一緒に膨らんで隠れてしまうので、
- * 自分自身を含めないモデルで予測した誤差のほうが遥かに判別しやすい。
- */
 export function leaveOneOutResiduals(points, count, lambda, out) {
   const others = new Float64Array(count);
   const row = new Float64Array(FEATURE_COUNT);
   for (let i = 0; i < count; i++) {
     let n = 0;
     for (let j = 0; j < count; j++) if (j !== i) others[n++] = j;
-    if (n < 5) {
+    if (n < FEATURE_COUNT) {
       out[i] = 0;
       continue;
     }
@@ -355,25 +581,17 @@ function rms(values, count) {
 
 /**
  * キャリブレーション点から回帰モデルを解く。
- * points: 長さ count の配列。各要素は { row: 長さ FEATURE_COUNT の基底, x, y }。
- *   x, y は画面の正規化座標 [0,1]。
- * screenPx: 誤差を px で表すための代表長（例: (幅+高さ)/2）。
- * lambda: リッジの係数。
- *
- * 戻り値は GazeModel に渡す一式 + 誤差 + 除外した点数。
- * errPx は leave-one-out の RMS なので in-sample より実際に近い値になる。
+ * FEATURE_COUNT が 8 に増えたので 13 点以上を想定している
+ * （点が少なすぎると 1 点の失敗が全体を歪めるのは v1 で確認済み）。
  */
 export function calibrate(points, count, screenPx, lambda) {
   const loo = new Float64Array(count);
   leaveOneOutResiduals(points, count, lambda, loo);
   const reference = rms(loo, count);
 
-  // 9点に対して6項なので、1点でも大きく外すと回帰全体が引きずられる。
-  // 「どの1点を除くと残りの予測誤差が最も良くなるか」を総当たりで見て、
-  // はっきり良くなる（半分以下）ならそれは外れ値とみなして捨てる。
   let indices = null;
   let keptCount = count;
-  if (count > 6) {
+  if (count > FEATURE_COUNT) {
     const subsetLoo = new Float64Array(count);
     const without = new Float64Array(count);
     let worstIndex = -1;
@@ -415,27 +633,46 @@ export function calibrate(points, count, screenPx, lambda) {
 }
 
 // ---------------------------------------------------------------------------
-// モデル本体
+// モデル
 // ---------------------------------------------------------------------------
 
-/** 正規化座標 [0,1] を出す推定器。基底を渡すと画面の正規化座標を返す。 */
+export const MODE_BOTH = "both";
+export const MODE_GAZE = "gaze";
+export const MODE_HEAD = "head";
+
 export class GazeModel {
-  constructor(scaler, coefX, coefY, errPx) {
+  constructor(scaler, coefX, coefY, errPx, reference, meta) {
     this.scaler = scaler;
     this.coefX = coefX;
     this.coefY = coefY;
     this.errPx = errPx || 0;
+    this.reference = reference || null; // 基準フレーム（REFERENCE_COUNT*3）
+    this.meta = meta || {};
     this.scaled = new Float64Array(FEATURE_COUNT);
   }
 
-  /** 基底 row（長さ FEATURE_COUNT）→ out[0], out[1] に正規化座標 [0,1]。 */
-  predict(row, out) {
+  /** キャリブ時の平均的な眼球特徴（正面・注視中央）。瞬き時の代用値。 */
+  neutralEye(out) {
+    out[0] = this.scaler.mean[F_EYE_H];
+    out[1] = this.scaler.mean[F_EYE_V];
+    return out;
+  }
+
+  /**
+   * 基底 row → out[0], out[1] に正規化座標 [0,1]。
+   * mode でどちらの情報を使うか選べる（使わない方は標準化後 0 = 平均に固定する）。
+   */
+  predict(row, out, mode) {
+    const useGaze = mode !== MODE_HEAD;
+    const useHead = mode !== MODE_GAZE;
     applyScaler(this.scaler, row, this.scaled);
     let x = 0;
     let y = 0;
     for (let j = 0; j < FEATURE_COUNT; j++) {
-      // キャリブレーションで見ていない領域まで外挿すると推定が暴れるので、
-      // 標準化した値を ±4σ で頭打ちにする（平均から 4 標準偏差より外は信じない）。
+      const isEye = j === F_EYE_H || j === F_EYE_V || j === F_EYE_H2 || j === F_EYE_V2;
+      const isHead = j === F_YAW || j === F_PITCH;
+      if ((isEye && !useGaze) || (isHead && !useHead)) continue;
+      // キャリブレーションで見ていない領域まで外挿すると推定が暴れるので ±4σ で頭打ち
       let z = this.scaled[j];
       if (z > 4) z = 4;
       else if (z < -4) z = -4;
@@ -443,8 +680,8 @@ export class GazeModel {
       y += this.coefY[j] * z;
     }
     if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
-    out[0] = x < 0 ? 0 : x > 1 ? 1 : x;
-    out[1] = y < 0 ? 0 : y > 1 ? 1 : y;
+    out[0] = clamp01(x);
+    out[1] = clamp01(y);
     return true;
   }
 
@@ -455,16 +692,22 @@ export class GazeModel {
       coefX: Array.from(this.coefX),
       coefY: Array.from(this.coefY),
       errPx: this.errPx,
+      reference: this.reference ? Array.from(this.reference) : null,
+      meta: this.meta,
     };
   }
 
   static fromJSON(data) {
     if (!data || !data.coefX || !data.mean || !data.std) return null;
+    // 特徴量の数が変わった世代のデータは使わない
+    if (data.mean.length !== FEATURE_COUNT || data.coefX.length !== FEATURE_COUNT) return null;
     return new GazeModel(
       { mean: Float64Array.from(data.mean), std: Float64Array.from(data.std) },
       Float64Array.from(data.coefX),
       Float64Array.from(data.coefY),
-      data.errPx
+      data.errPx,
+      data.reference ? Float64Array.from(data.reference) : null,
+      data.meta || {}
     );
   }
 }

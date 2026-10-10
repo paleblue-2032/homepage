@@ -1,11 +1,11 @@
 /**
- * gaze-cursor のブラウザ側。
+ * gaze-cursor のブラウザ側（プラットフォーム層）。
  *
- * カメラ → 視線推定（core.js）→ 制御（controller.js）→ このページの中の仮想カーソル、
- * までをブラウザだけで完結させる。OS のカーソルには触らない。
+ * やることは「視線を推定して、観測として制御側に渡す」だけ。カーソルをどう動かすかは
+ * 決めない（それは controller.js / 将来の MCU の仕事）。
  *
- * 仮想カーソルは Actuator インターフェースの実装のひとつ。MCU に載せるときは、
- * ここを「モータを回す何か」に差し替えるだけで controller.js はそのまま使える。
+ * 推定は core.js（DOM 非依存・移植可能）にある。v2 では頭部姿勢（3Dの剛体合わせ）と
+ * 眼球特徴を統合した。詳しくは core.js の冒頭コメントを参照。
  */
 
 import * as core from "./core.js";
@@ -15,26 +15,40 @@ import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@m
 const WASM_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
-const STORE_KEY = "gaze-cursor:calibration:v1";
+const STORE_KEY = "gaze-cursor:calibration:v3";
 
 const CFG = {
-  samplesPerPoint: 40,
+  // キャリブレーション
+  samplesPerTarget: 40,
   settleMs: 550,
   sampleTimeoutMs: 3000,
-  minSamplesPerPoint: 12,
+  minSamplesPerTarget: 12,
   ridgeLambda: 1e-3,
+  // 13点。最初の中央で「正面」の基準フレームを取るので、必ず中央から始める。
+  targets: [
+    { x: 0.5, y: 0.5 },
+    { x: 0.1, y: 0.1 }, { x: 0.5, y: 0.1 }, { x: 0.9, y: 0.1 },
+    { x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 },
+    { x: 0.1, y: 0.9 }, { x: 0.5, y: 0.9 }, { x: 0.9, y: 0.9 },
+    { x: 0.3, y: 0.1 }, { x: 0.7, y: 0.1 },
+    { x: 0.3, y: 0.9 }, { x: 0.7, y: 0.9 },
+  ],
+  // 平滑化
   medianWindow: 3,
   smoothBeta: 0.012,
   smoothHzFast: 1.6,
   smoothHzSlow: 0.4,
   smoothDefault: 28,
+  // 制御
   controlHz: 100,
-  // 瞬き中は虹彩の推定が暴れるので、開き具合が普段の 45% を切ったらそのフレームは使わない
-  blinkRatio: 0.45,
-  eyeBaselineFrames: 61,
-  // 観測が途切れてからの猶予。短い取りこぼしで止まらない程度に緩めにしてある。
   pauseAfterMs: 400,
   failStopAfterMs: 2500,
+  // 推定の品質
+  maxRigidResidual: 0.05, // 剛体合わせの残差がこれを超えたら使わない
+  maxYawDeg: 60,
+  maxPitchDeg: 45,
+  blinkRatio: 0.45,
+  eyeBaselineFrames: 61,
 };
 
 const els = {
@@ -50,17 +64,18 @@ const els = {
   dwellVal: document.getElementById("dwell-val"),
   smooth: document.getElementById("smooth"),
   smoothVal: document.getElementById("smooth-val"),
+  mode: document.getElementById("mode"),
+  camera: document.getElementById("camera"),
+  preview: document.getElementById("preview"),
   pageStatus: document.getElementById("page-status"),
   hudState: document.getElementById("hud-state"),
+  hudGaze: document.getElementById("hud-gaze"),
+  hudPose: document.getElementById("hud-pose"),
+  hudQuality: document.getElementById("hud-quality"),
   hudCalib: document.getElementById("hud-calib"),
   hudLatency: document.getElementById("hud-latency"),
   hudCam: document.getElementById("hud-cam"),
-  hudFps: document.getElementById("hud-fps"),
-  hudMiss: document.getElementById("hud-miss"),
-  hudGaze: document.getElementById("hud-gaze"),
-  hudEye: document.getElementById("hud-eye"),
-  camera: document.getElementById("camera"),
-  preview: document.getElementById("preview"),
+  hudStats: document.getElementById("hud-stats"),
   hudHint: document.getElementById("hud-hint"),
 };
 
@@ -78,10 +93,8 @@ const cursor = {
   },
 
   move(dx, dy) {
-    const maxX = window.innerWidth;
-    const maxY = window.innerHeight;
-    this.x = Math.min(Math.max(this.x + dx, 0), maxX);
-    this.y = Math.min(Math.max(this.y + dy, 0), maxY);
+    this.x = Math.min(Math.max(this.x + dx, 0), window.innerWidth);
+    this.y = Math.min(Math.max(this.y + dy, 0), window.innerHeight);
   },
 
   recenter() {
@@ -104,7 +117,6 @@ const cursor = {
     }
   },
 
-  // 矩形は毎フレーム読むとレイアウトを叩くので、変わったときだけ取り直す
   invalidate() {
     this.rects = null;
   },
@@ -140,24 +152,40 @@ const state = {
   landmarker: null,
   result: null,
   lastVideoTime: -1,
+  aspect: 16 / 9,
+  mode: core.MODE_BOTH,
+  // 推定用の作業領域（毎フレーム使い回す）
+  poseCloud: new Float64Array(core.POSE_COUNT * 3),
+  rotation: new Float64Array(9),
+  translation: new Float64Array(3),
+  euler: new Float64Array(3),
+  eyeFeatures: new Float64Array(2),
+  irisLeft: new Float64Array(3),
+  irisRight: new Float64Array(3),
+  openness: new Float64Array(1),
+  basis: new Float64Array(core.FEATURE_COUNT),
+  predicted: new Float64Array(2),
+  quality: 0,
+  poseEver: false,
+  // 平滑化
   filterX: null,
   filterY: null,
   medianX: null,
   medianY: null,
-  feature: new Float64Array(core.RAW_FEATURE_COUNT),
-  basis: new Float64Array(core.FEATURE_COUNT),
-  predicted: new Float64Array(2),
+  eyeMedian: null,
+  // 視線
   gaze: { x: 0.5, y: 0.5 },
   gazePx: { x: 0, y: 0 },
   gazeEver: false,
   missRate: 0,
-  eyeOpen: 0,
-  eyeMedian: null,
+  // 制御
   controller: null,
   controlTimer: 0,
+  // キャリブレーション
   calibrating: false,
   calibTarget: null,
   collecting: null,
+  // UI
   smoothSlider: CFG.smoothDefault,
   dwellMs: Number(els.dwell.value),
   frames: 0,
@@ -170,8 +198,6 @@ const state = {
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-// 同じ文言を何度も書き直すとちらつくので、変わったときだけ反映する。
-// alert を立てたものは「操作が止まっている理由」なので色を変えて目立たせる。
 const setHint = (text, alert) => {
   const next = text || "";
   if (els.hudHint.textContent === next && els.hudHint.classList.contains("is-alert") === !!alert) return;
@@ -183,26 +209,6 @@ const setPageStatus = (text) => {
 };
 
 // --- カメラと推定器 ---
-
-async function ensureLandmarker() {
-  if (state.landmarker) return state.landmarker;
-  setHint("視線モデルを読み込んでいます...");
-  const fileset = await FilesetResolver.forVisionTasks(WASM_BASE);
-  const options = (delegate) => ({
-    baseOptions: { modelAssetPath: MODEL_URL, delegate },
-    runningMode: "VIDEO",
-    numFaces: 1,
-    minFaceDetectionConfidence: 0.4,
-    minFacePresenceConfidence: 0.4,
-    minTrackingConfidence: 0.4,
-  });
-  try {
-    state.landmarker = await FaceLandmarker.createFromOptions(fileset, options("GPU"));
-  } catch {
-    state.landmarker = await FaceLandmarker.createFromOptions(fileset, options("CPU"));
-  }
-  return state.landmarker;
-}
 
 async function openCamera(deviceId) {
   if (state.stream) {
@@ -217,10 +223,12 @@ async function openCamera(deviceId) {
   await els.cam.play();
   const settings = state.stream.getVideoTracks()[0].getSettings();
   els.hudCam.textContent = `${settings.width}x${settings.height}@${Math.round(settings.frameRate)}`;
+  state.aspect = settings.width && settings.height ? settings.width / settings.height : 16 / 9;
   await fillCameraList(settings.deviceId);
+  warnIfCalibrationStale();
 }
 
-/** カメラが複数ある環境で、写っている方（顔が映る方）を選べるようにする。 */
+/** カメラが複数ある環境で、顔が映る方を選べるようにする。 */
 async function fillCameraList(activeId) {
   try {
     const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
@@ -237,26 +245,35 @@ async function fillCameraList(activeId) {
   }
 }
 
-// --- 推定（core.js を呼ぶだけ） ---
-
-/**
- * 目の開き具合（上下の瞼の距離 / 目頭-目尻の距離）。
- * 瞬きの最中は虹彩の位置が当てにならないので、この値でフレームを捨てる。
- * 個人差が大きいので絶対値ではなく、普段の値（中央値）に対する比率で見る。
- */
-function eyeOpenness(landmarks) {
-  let sum = 0;
-  for (const eye of core.EYES) {
-    const upper = landmarks[eye.upper];
-    const lower = landmarks[eye.lower];
-    const from = landmarks[eye.from];
-    const to = landmarks[eye.to];
-    const height = Math.hypot(lower.x - upper.x, lower.y - upper.y);
-    const width = Math.hypot(to.x - from.x, to.y - from.y);
-    if (width > 1e-6) sum += height / width;
+/** 解像度が変わると基準フレームが合わなくなるので、キャリブし直しを促す。 */
+function warnIfCalibrationStale() {
+  if (!state.model || !state.model.meta || !state.model.meta.aspect) return;
+  if (Math.abs(state.model.meta.aspect - state.aspect) > 0.01) {
+    setHint("カメラの解像度が変わったので、CALIBRATE をやり直してください", true);
   }
-  return sum / core.EYES.length;
 }
+
+async function ensureLandmarker() {
+  if (state.landmarker) return state.landmarker;
+  setHint("視線モデルを読み込んでいます...");
+  const fileset = await FilesetResolver.forVisionTasks(WASM_BASE);
+  const options = (delegate) => ({
+    baseOptions: { modelAssetPath: MODEL_URL, delegate },
+    runningMode: "VIDEO",
+    numFaces: 1,
+    minFaceDetectionConfidence: 0.3,
+    minFacePresenceConfidence: 0.3,
+    minTrackingConfidence: 0.3,
+  });
+  try {
+    state.landmarker = await FaceLandmarker.createFromOptions(fileset, options("GPU"));
+  } catch {
+    state.landmarker = await FaceLandmarker.createFromOptions(fileset, options("CPU"));
+  }
+  return state.landmarker;
+}
+
+// --- 推定パイプライン ---
 
 function resetFilters() {
   const cutoff = core.cutoffFromSmoothing(state.smoothSlider, CFG.smoothHzSlow, CFG.smoothHzFast);
@@ -266,11 +283,52 @@ function resetFilters() {
   state.medianY = new core.MedianFilter(CFG.medianWindow);
 }
 
+/**
+ * ランドマーク → 平滑化された視線（ビューポート px）。
+ * 頭部姿勢（剛体合わせ）と眼球特徴を統合して推定する。使えないフレームは false。
+ */
 function estimateGaze(landmarks, count, timeMs) {
-  if (!state.model) return false;
-  if (!core.extractFeatures(landmarks, count, state.feature)) return false;
-  core.fillBasis(state.feature, state.basis);
-  if (!state.model.predict(state.basis, state.predicted)) return false;
+  const model = state.model;
+  if (!model || !model.reference) return false;
+  const aspect = state.aspect;
+
+  // 1) 剛体合わせで頭部姿勢を解く
+  if (!core.extractPoseCloud(landmarks, count, aspect, state.poseCloud)) return false;
+  const scale = core.solveRigidTransform(
+    model.reference, state.poseCloud, core.POSE_COUNT, state.rotation, state.translation
+  );
+  state.quality = core.rigidResidual(
+    model.reference, state.poseCloud, core.POSE_COUNT, state.rotation, state.translation, scale
+  );
+  const residualGate =
+    model.meta && model.meta.residualMedian
+      ? Math.max(CFG.maxRigidResidual, model.meta.residualMedian * 3)
+      : CFG.maxRigidResidual;
+  if (!(state.quality <= residualGate)) return false;
+
+  core.eulerFromRotation(state.rotation, state.euler);
+  if (Math.abs(state.euler[0]) > CFG.maxYawDeg || Math.abs(state.euler[1]) > CFG.maxPitchDeg) return false;
+  state.poseEver = true;
+
+  // 2) 眼球特徴。虹彩を基準フレームへ写すので、頭の回転に依存しない
+  core.landmarkToIsotropic(landmarks[468], aspect, state.irisLeft);
+  core.landmarkToIsotropic(landmarks[473], aspect, state.irisRight);
+  core.extractEyeFeatures(
+    state.irisLeft, state.irisRight, state.rotation, state.translation, scale, model.reference, state.eyeFeatures
+  );
+
+  // 3) 瞬き中は虹彩が当てにならないので基準値に置き換える。
+  //    こうすると自動的に「頭の向きだけ」での推定に落ちる（融合）。
+  core.eyeOpenness(landmarks, count, aspect, state.openness);
+  state.eyeMedian.push(state.openness[0]);
+  const baseline = state.eyeMedian.count >= 5 ? state.eyeMedian.value : 0;
+  if (baseline > 0 && state.openness[0] < baseline * CFG.blinkRatio) {
+    model.neutralEye(state.eyeFeatures);
+  }
+
+  // 4) 特徴量 → 推定
+  core.fillBasis(state.euler, state.eyeFeatures, scale, state.basis);
+  if (!model.predict(state.basis, state.predicted, state.mode)) return false;
 
   const width = window.innerWidth;
   const height = window.innerHeight;
@@ -285,6 +343,11 @@ function estimateGaze(landmarks, count, timeMs) {
 
 // --- キャリブレーション ---
 
+/**
+ * 各フレームの生データを貯める。あとで「中央で取った正面姿勢」を基準にしてから
+ * 特徴量へ変換するため、ここでは加工しない。
+ * 1サンプル = 基準用クラウド(REFERENCE_COUNT*3) + 左右の虹彩(3+3)。
+ */
 function collectSamples(count, timeoutMs) {
   return new Promise((resolve) => {
     const samples = [];
@@ -294,70 +357,122 @@ function collectSamples(count, timeoutMs) {
       state.collecting = null;
       resolve(samples);
     }
-    state.collecting = (features) => {
-      samples.push(Float64Array.from(features));
+    state.collecting = (landmarks) => {
+      const sample = new Float64Array(core.REFERENCE_COUNT * 3 + 6);
+      if (!core.extractReferenceCloud(landmarks, landmarks.length, state.aspect, sample)) return;
+      const at = core.REFERENCE_COUNT * 3;
+      core.landmarkToIsotropic(landmarks[468], state.aspect, sample.subarray(at, at + 3));
+      core.landmarkToIsotropic(landmarks[473], state.aspect, sample.subarray(at + 3, at + 6));
+      samples.push(sample);
       if (samples.length >= count) finish();
     };
   });
 }
 
-function medianOf(samples, index) {
-  const values = samples.map((sample) => sample[index]).sort((a, b) => a - b);
+function medianOfRows(rows, index) {
+  const values = rows.map((row) => row[index]).sort((a, b) => a - b);
   const mid = values.length >> 1;
   return values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
 }
 
 async function runCalibration() {
   if (!state.stream) {
-    setHint("先に START でカメラを起動してください");
+    setHint("先に START でカメラを起動してください", true);
     return;
   }
   stopTracking("キャリブレーションのため停止しました");
   els.calibrate.disabled = true;
+  state.poseEver = false;
 
   const width = window.innerWidth;
   const height = window.innerHeight;
-  const fractions = [0.125, 0.5, 0.875];
-  const targets = [];
-  for (const fy of fractions) for (const fx of fractions) targets.push({ x: fx, y: fy });
+  const targets = CFG.targets;
+  const collected = [];
 
-  const points = [];
   try {
     for (let i = 0; i < targets.length; i++) {
       const target = targets[i];
-      state.calibTarget = {
-        x: target.x * width,
-        y: target.y * height,
-        index: i + 1,
-        total: targets.length,
-        progress: 0,
-      };
-      setHint(`${i + 1}/${targets.length} — 点を見つめたままにしてください`);
+      state.calibTarget = { x: target.x * width, y: target.y * height, index: i + 1, total: targets.length, progress: 0 };
+      setHint(
+        i === 0
+          ? `1/${targets.length} — 画面の中央を見て、頭をまっすぐにしてください`
+          : `${i + 1}/${targets.length} — 点を見つめたままにしてください`
+      );
       await sleep(CFG.settleMs);
-      const samples = await collectSamples(CFG.samplesPerPoint, CFG.sampleTimeoutMs);
-      if (samples.length < CFG.minSamplesPerPoint) {
+      const samples = await collectSamples(CFG.samplesPerTarget, CFG.sampleTimeoutMs);
+      if (samples.length < CFG.minSamplesPerTarget) {
         throw new Error(`点 ${i + 1} で顔を検出できませんでした。明るさと距離を確認してください`);
       }
-      const features = new Float64Array([medianOf(samples, 0), medianOf(samples, 1), medianOf(samples, 2)]);
-      points.push({
-        row: Float64Array.from(core.fillBasis(features, new Float64Array(core.FEATURE_COUNT))),
-        x: target.x,
-        y: target.y,
-      });
+      collected.push({ x: target.x, y: target.y, samples });
       if (state.calibTarget) state.calibTarget.progress = 1;
       await sleep(180);
     }
 
+    // 中央のターゲットの平均を「正面の基準フレーム」にする
+    const reference = new Float64Array(core.REFERENCE_COUNT * 3);
+    const centerSamples = collected[0].samples;
+    for (let i = 0; i < reference.length; i++) {
+      let sum = 0;
+      for (let s = 0; s < centerSamples.length; s++) sum += centerSamples[s][i];
+      reference[i] = sum / centerSamples.length;
+    }
+
+    // 各サンプルを基準フレームで解いて特徴量にし、ターゲットごとに中央値を取る
+    const rotation = new Float64Array(9);
+    const translation = new Float64Array(3);
+    const euler = new Float64Array(3);
+    const eye = new Float64Array(2);
+    const irisLeft = new Float64Array(3);
+    const irisRight = new Float64Array(3);
+    const basis = new Float64Array(core.FEATURE_COUNT);
+    const irisAt = core.REFERENCE_COUNT * 3;
+    const residuals = [];
+    const points = collected.map((target) => {
+      const rows = [];
+      for (const sample of target.samples) {
+        const cloud = sample.subarray(0, core.POSE_COUNT * 3);
+        const scale = core.solveRigidTransform(reference, cloud, core.POSE_COUNT, rotation, translation);
+        residuals.push(core.rigidResidual(reference, cloud, core.POSE_COUNT, rotation, translation, scale));
+        core.eulerFromRotation(rotation, euler);
+        irisLeft.set(sample.subarray(irisAt, irisAt + 3));
+        irisRight.set(sample.subarray(irisAt + 3, irisAt + 6));
+        core.extractEyeFeatures(irisLeft, irisRight, rotation, translation, scale, reference, eye);
+        rows.push(Float64Array.from(core.fillBasis(euler, eye, scale, basis)));
+      }
+      const row = new Float64Array(core.FEATURE_COUNT);
+      for (let j = 0; j < core.FEATURE_COUNT; j++) row[j] = medianOfRows(rows, j);
+      return { row, x: target.x, y: target.y };
+    });
+
+    // 姿勢の品質ゲートは「この人・このカメラで実際に出た残差」を基準にする。
+    // 絶対値で決めると、顔やカメラによっては全フレームを捨てて動かなくなる。
+    residuals.sort((a, b) => a - b);
+    const residualMedian = residuals[residuals.length >> 1];
+
     const fitted = core.calibrate(points, points.length, (width + height) / 2, CFG.ridgeLambda);
-    state.model = new core.GazeModel(fitted.scaler, fitted.coefX, fitted.coefY, fitted.errPx);
+    state.model = new core.GazeModel(fitted.scaler, fitted.coefX, fitted.coefY, fitted.errPx, reference, {
+      aspect: state.aspect,
+      width,
+      height,
+      residualMedian,
+    });
     state.errPx = fitted.errPx;
     localStorage.setItem(STORE_KEY, JSON.stringify(state.model.toJSON()));
     resetFilters();
     setCalibLabel();
     const droppedNote = fitted.dropped ? `（${fitted.dropped}点は外れ値として除外）` : "";
-    setHint(`キャリブレーション完了 — 誤差 約 ${Math.round(fitted.errPx)} px${droppedNote}。START TRACKING で使えます`);
+    if (residualMedian > 0.02) {
+      setHint(
+        `キャリブレーション完了 — 誤差 約 ${Math.round(fitted.errPx)} px${droppedNote}。ただし顔の捉え方が不安定です（QUAL ${residualMedian.toFixed(3)}）。明るさと髪・眼鏡の反射を確認してください`,
+        true
+      );
+    } else {
+      setHint(
+        `キャリブレーション完了 — 誤差 約 ${Math.round(fitted.errPx)} px${droppedNote}。START TRACKING で使えます`
+      );
+    }
   } catch (err) {
-    setHint((err && err.message) || String(err));
+    setHint((err && err.message) || String(err), true);
   } finally {
     state.calibTarget = null;
     els.calibrate.disabled = false;
@@ -373,7 +488,7 @@ function loadCalibration() {
     const raw = localStorage.getItem(STORE_KEY);
     if (!raw) return;
     const model = core.GazeModel.fromJSON(JSON.parse(raw));
-    if (!model) return;
+    if (!model || !model.reference) return;
     state.model = model;
     state.errPx = model.errPx || 0;
   } catch {
@@ -399,19 +514,20 @@ function drawLandmarks(ctx, landmarks, width, height) {
   ctx.lineWidth = 1;
   ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
   ctx.fillStyle = state.accent;
-  for (const eye of core.EYES) {
-    const iris = landmarks[eye.iris];
-    if (!iris) continue;
-    const from = landmarks[eye.from];
-    const to = landmarks[eye.to];
+  for (const eye of core.EYE_OPEN) {
     const upper = landmarks[eye.upper];
     const lower = landmarks[eye.lower];
+    const from = landmarks[eye.from];
+    const to = landmarks[eye.to];
     ctx.beginPath();
     ctx.moveTo(from.x * width, from.y * height);
     ctx.lineTo(to.x * width, to.y * height);
     ctx.moveTo(upper.x * width, upper.y * height);
     ctx.lineTo(lower.x * width, lower.y * height);
     ctx.stroke();
+  }
+  for (const index of [468, 473]) {
+    const iris = landmarks[index];
     ctx.beginPath();
     ctx.arc(iris.x * width, iris.y * height, 3, 0, Math.PI * 2);
     ctx.fill();
@@ -439,15 +555,14 @@ function drawCalibrationTarget(ctx, target) {
   }
 }
 
-/** 視線の推定位置（細い十字）と、仮想カーソル（丸）を別々に描く。 */
-function drawGaze(ctx, gazePoint) {
+function drawGaze(ctx, point) {
   ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(gazePoint.x - 7, gazePoint.y);
-  ctx.lineTo(gazePoint.x + 7, gazePoint.y);
-  ctx.moveTo(gazePoint.x, gazePoint.y - 7);
-  ctx.lineTo(gazePoint.x, gazePoint.y + 7);
+  ctx.moveTo(point.x - 7, point.y);
+  ctx.lineTo(point.x + 7, point.y);
+  ctx.moveTo(point.x, point.y - 7);
+  ctx.lineTo(point.x, point.y + 7);
   ctx.stroke();
 }
 
@@ -478,7 +593,7 @@ function draw() {
 
   cursor.checkTargets();
 
-  if (state.controller && !state.calibrating) {
+  if (state.controller && !state.calibrating && state.model) {
     const controller = state.controller;
     if (controller.state === ARMED || controller.state === PAUSED) drawGaze(ctx, state.gazePx);
     drawCursor(ctx, cursor, controller.state === ARMED ? controller.dwellProgress : 0,
@@ -518,9 +633,7 @@ function frame() {
 
   if (landmarks && count >= core.LANDMARK_COUNT) {
     if (state.collecting) {
-      if (core.extractFeatures(landmarks, count, state.feature)) {
-        state.collecting(Float64Array.from(state.feature));
-      }
+      state.collecting(landmarks);
     } else if (!state.calibrating) {
       estimated = estimateGaze(landmarks, count, now);
     }
@@ -533,27 +646,20 @@ function frame() {
 
   // 制御側には「観測」として渡すだけ。どう動かすかは controller.js が決める。
   if (estimated) {
-    state.eyeOpen = eyeOpenness(landmarks);
-    if (state.eyeOpen > 0) state.eyeMedian.push(state.eyeOpen);
-    const baseline = state.eyeMedian.count >= 5 ? state.eyeMedian.value : 0;
-    const blinking = baseline > 0 && state.eyeOpen < baseline * CFG.blinkRatio;
-    if (!blinking) {
-      state.gazeEver = true;
-      if (state.controller) state.controller.observeGaze(now, now, state.gaze.x, state.gaze.y, 1);
-    }
+    state.gazeEver = true;
+    if (state.controller) state.controller.observeGaze(now, now, state.gaze.x, state.gaze.y, 1);
   }
 
   if (!els.stage.hidden) draw();
 
   if (now - state.statsAt >= 400) {
     state.statsAt = now;
-    els.hudFps.textContent = state.stream ? state.fps.toFixed(0) : "0";
     const rate = state.stream ? state.statMisses / Math.max(state.statFrames, 1) : 0;
     state.missRate = rate;
-    els.hudMiss.textContent = `${(rate * 100).toFixed(0)}%`;
+    els.hudStats.textContent = `${state.stream ? state.fps.toFixed(0) : "0"} / ${(rate * 100).toFixed(0)}%`;
     state.statFrames = 0;
     state.statMisses = 0;
-    renderController();
+    renderHud();
   }
 }
 
@@ -562,38 +668,39 @@ function isActive(controller) {
   return !!controller && (controller.state === ARMED || controller.state === PAUSED);
 }
 
-/** 制御側の状態を HUD に出す。 */
-function renderController() {
+function renderHud() {
   const controller = state.controller;
   if (!controller) {
     els.hudState.textContent = "-";
     els.hudLatency.textContent = "--";
-    return;
+  } else {
+    const snapshot = controller.snapshot();
+    const reason = snapshot.reason && snapshot.state !== ARMED ? ` (${snapshot.reason})` : "";
+    els.hudState.textContent = `${snapshot.state}${reason}`;
+    els.hudLatency.textContent =
+      snapshot.latencyMs === null || snapshot.latencyMs === undefined ? "--" : `${snapshot.latencyMs.toFixed(0)}ms`;
+    els.track.textContent = isActive(controller) ? "STOP TRACKING" : "START TRACKING";
+    if (snapshot.state === STOPPED) {
+      setHint(
+        state.missRate > 0.5
+          ? "顔が検出できませんでした。カメラに顔が写る明るさ・距離にしてください（PREVIEW で確認できます）"
+          : "視線が途切れたので停止しました。START TRACKING で再開できます",
+        true
+      );
+    } else if (snapshot.state === PAUSED) {
+      setHint("視線を待っています（HUD の STATS と QUAL を見てください）", false);
+    } else if (snapshot.state === ARMED) {
+      setHint("視線でカーソルが動きます。止めたいときは Esc");
+    }
   }
-  const snapshot = controller.snapshot();
-  const reason = snapshot.reason && snapshot.state !== ARMED ? ` (${snapshot.reason})` : "";
-  els.hudState.textContent = `${snapshot.state}${reason}`;
-  els.hudLatency.textContent =
-    snapshot.latencyMs === null || snapshot.latencyMs === undefined ? "--" : `${snapshot.latencyMs.toFixed(0)}ms`;
-  els.hudEye.textContent = state.gazeEver ? state.eyeOpen.toFixed(2) : "--";
+
   els.hudGaze.textContent = state.gazeEver
     ? `${(state.gaze.x * 100).toFixed(0)}, ${(state.gaze.y * 100).toFixed(0)}`
     : "--, --";
-  els.track.textContent = isActive(controller) ? "STOP TRACKING" : "START TRACKING";
-
-  // 止まっている理由を必ず出す（黙って止まるのを避ける）
-  if (snapshot.state === STOPPED) {
-    setHint(
-      state.missRate > 0.5
-        ? "顔が検出できませんでした。ノートPCなら画面の上に顔が写る位置に座り、明るさを確保してください（PREVIEW で写りを確認できます）"
-        : "視線が途切れたので停止しました。START TRACKING で再開できます",
-      true
-    );
-  } else if (snapshot.state === PAUSED) {
-    setHint("視線を待っています（HUD の NO FACE と EYE を見てください）", false);
-  } else if (snapshot.state === ARMED) {
-    setHint("視線でカーソルが動きます。止めたいときは Esc");
-  }
+  els.hudPose.textContent = state.poseEver
+    ? `${state.euler[0].toFixed(0)}, ${state.euler[1].toFixed(0)}`
+    : "--, --";
+  els.hudQuality.textContent = state.poseEver ? state.quality.toFixed(3) : "--";
 }
 
 // --- UI ---
@@ -601,7 +708,7 @@ function renderController() {
 async function start() {
   els.start.disabled = true;
   try {
-    await openCamera(null);
+    await openCamera(els.camera.value || null);
     await ensureLandmarker();
     els.stage.hidden = false;
     resizeOverlay();
@@ -613,41 +720,44 @@ async function start() {
     }
     resizeOverlay();
     setPageStatus("running");
-    setHint(
-      state.model
-        ? "前回のキャリブレーションを読み込みました。START TRACKING で使えます"
-        : "CALIBRATE を押して、出てくる9点を順に注視してください"
-    );
+    if (state.model) {
+      setHint("前回のキャリブレーションを読み込みました。START TRACKING で使えます");
+    } else {
+      setHint("CALIBRATE を押して、出てくる13点を順に注視してください", true);
+    }
   } catch (err) {
     setPageStatus("カメラを起動できませんでした");
-    setHint((err && err.message) || String(err));
+    setHint((err && err.message) || String(err), true);
   } finally {
     els.start.disabled = false;
   }
 }
 
 function startTracking() {
-  if (!state.model) {
-    setHint("キャリブレーションがまだです。CALIBRATE を押して、出てくる9点を順に注視してください", true);
+  if (!state.model || !state.model.reference) {
+    setHint("キャリブレーションがまだです。CALIBRATE を押して、出てくる13点を順に注視してください", true);
     return;
   }
   resetFilters();
   state.medianX.reset();
   state.medianY.reset();
+  state.eyeMedian.reset();
+  state.gazeEver = false;
+  state.poseEver = false;
   state.controller = new PointerController(cursor, {
     dwellMs: state.dwellMs,
     pauseAfterMs: CFG.pauseAfterMs,
     failStopAfterMs: CFG.failStopAfterMs,
   });
   state.controller.arm(performance.now(), window.innerWidth, window.innerHeight);
-  renderController();
+  renderHud();
   setHint("視線でカーソルが動きます。止めたいときは Esc");
 }
 
 function stopTracking(reason) {
   if (!state.controller) return;
   state.controller.stop(reason || "stopped");
-  renderController();
+  renderHud();
   if (reason) setHint(reason);
 }
 
@@ -662,7 +772,7 @@ async function exitStage() {
   state.result = null;
   els.stage.hidden = true;
   setPageStatus("idle");
-  renderController();
+  renderHud();
 }
 
 function toggleTracking() {
@@ -674,20 +784,6 @@ function bind() {
   els.start.addEventListener("click", start);
   els.calibrate.addEventListener("click", runCalibration);
   els.track.addEventListener("click", toggleTracking);
-
-  els.camera.addEventListener("change", async () => {
-    try {
-      await openCamera(els.camera.value);
-      setHint("カメラを切り替えました");
-    } catch (err) {
-      setHint(`カメラを切り替えられませんでした: ${err && err.message ? err.message : err}`, true);
-    }
-  });
-
-  els.preview.addEventListener("click", () => {
-    els.stage.classList.toggle("is-preview");
-    els.preview.textContent = els.stage.classList.contains("is-preview") ? "PREVIEW ON" : "PREVIEW";
-  });
   els.exit.addEventListener("click", exitStage);
 
   els.dwell.addEventListener("input", () => {
@@ -704,6 +800,31 @@ function bind() {
       state.filterY.setMinCutoff(cutoff);
     }
     els.smoothVal.textContent = els.smooth.value;
+  });
+
+  els.mode.addEventListener("change", () => {
+    state.mode = els.mode.value;
+    setHint(
+      state.mode === core.MODE_HEAD
+        ? "頭の向きだけで動かします（視線は使いません）"
+        : state.mode === core.MODE_GAZE
+          ? "視線だけで動かします（頭の向きは使いません）"
+          : "視線と頭の向きを統合して動かします"
+    );
+  });
+
+  els.camera.addEventListener("change", async () => {
+    try {
+      await openCamera(els.camera.value);
+      setHint("カメラを切り替えました");
+    } catch (err) {
+      setHint(`カメラを切り替えられませんでした: ${err && err.message ? err.message : err}`, true);
+    }
+  });
+
+  els.preview.addEventListener("click", () => {
+    els.stage.classList.toggle("is-preview");
+    els.preview.textContent = els.stage.classList.contains("is-preview") ? "PREVIEW ON" : "PREVIEW";
   });
 
   window.addEventListener("keydown", (event) => {
@@ -741,6 +862,7 @@ function init() {
     getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#d98fae";
   state.dwellMs = Number(els.dwell.value);
   state.smoothSlider = Number(els.smooth.value);
+  state.mode = els.mode.value;
   els.dwellVal.textContent = `${state.dwellMs}ms`;
   els.smoothVal.textContent = els.smooth.value;
   loadCalibration();
@@ -755,8 +877,8 @@ function init() {
     if (state.controller) state.controller.tick(performance.now());
   }, 1000 / CFG.controlHz);
 
-  renderController();
-  setPageStatus(state.model ? "ready" : "idle");
+  renderHud();
+  setPageStatus(state.model ? "ready (キャリブ済み)" : "idle");
 }
 
 init();
