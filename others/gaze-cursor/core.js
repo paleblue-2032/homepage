@@ -651,13 +651,6 @@ export class GazeModel {
     this.scaled = new Float64Array(FEATURE_COUNT);
   }
 
-  /** キャリブ時の平均的な眼球特徴（正面・注視中央）。瞬き時の代用値。 */
-  neutralEye(out) {
-    out[0] = this.scaler.mean[F_EYE_H];
-    out[1] = this.scaler.mean[F_EYE_V];
-    return out;
-  }
-
   /**
    * 基底 row → out[0], out[1] に正規化座標 [0,1]。
    * mode でどちらの情報を使うか選べる（使わない方は標準化後 0 = 平均に固定する）。

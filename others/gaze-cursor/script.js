@@ -34,15 +34,22 @@ const CFG = {
     { x: 0.3, y: 0.9 }, { x: 0.7, y: 0.9 },
   ],
   // 平滑化
-  medianWindow: 3,
+  medianWindow: 5,
   smoothBeta: 0.012,
   smoothHzFast: 1.6,
   smoothHzSlow: 0.4,
-  smoothDefault: 28,
+  smoothDefault: 40,
+  // 頭の向き・距離は動きが遅いので強く、眼球は速い（サッカード 30〜80ms）ので軽く。
+  // MediaPipe の z は x/y より遥かにノイジーで、姿勢を経由して推定を大きく揺らすため、
+  // 特徴量の段階で分けて平滑化する。
+  poseSmoothHz: 3.0,
+  eyeSmoothHz: 12.0,
   // 制御
   controlHz: 100,
   pauseAfterMs: 400,
   failStopAfterMs: 2500,
+  // 制御（推定の揺れを追わないための不感帯。狭くすると敏感だが震えやすい）
+  deadzonePx: 40,
   // 推定の品質
   maxRigidResidual: 0.05, // 剛体合わせの残差がこれを超えたら使わない
   maxYawDeg: 60,
@@ -173,6 +180,13 @@ const state = {
   medianX: null,
   medianY: null,
   eyeMedian: null,
+  poseYaw: null,
+  posePitch: null,
+  poseScale: null,
+  eyeH: null,
+  eyeV: null,
+  filteredPose: new Float64Array(2),
+  filteredEye: new Float64Array(2),
   // 視線
   gaze: { x: 0.5, y: 0.5 },
   gazePx: { x: 0, y: 0 },
@@ -281,6 +295,12 @@ function resetFilters() {
   state.filterY = new core.OneEuroFilter(cutoff, CFG.smoothBeta, 1);
   state.medianX = new core.MedianFilter(CFG.medianWindow);
   state.medianY = new core.MedianFilter(CFG.medianWindow);
+  // 姿勢系は速度に応じた可変にする意味が薄いので beta=0（固定の一次ローパス）で使う
+  state.poseYaw = new core.OneEuroFilter(CFG.poseSmoothHz, 0, 1);
+  state.posePitch = new core.OneEuroFilter(CFG.poseSmoothHz, 0, 1);
+  state.poseScale = new core.OneEuroFilter(CFG.poseSmoothHz, 0, 1);
+  state.eyeH = new core.OneEuroFilter(CFG.eyeSmoothHz, 0, 1);
+  state.eyeV = new core.OneEuroFilter(CFG.eyeSmoothHz, 0, 1);
 }
 
 /**
@@ -310,24 +330,29 @@ function estimateGaze(landmarks, count, timeMs) {
   if (Math.abs(state.euler[0]) > CFG.maxYawDeg || Math.abs(state.euler[1]) > CFG.maxPitchDeg) return false;
   state.poseEver = true;
 
-  // 2) 眼球特徴。虹彩を基準フレームへ写すので、頭の回転に依存しない
+  // 2) 瞬き中は虹彩が当てにならない。ここで観測を出さずに「保持」する
+  //    （頭だけの推定に切り替えると、視線との差が大きくて逆にカーソルが跳ねる）
+  core.eyeOpenness(landmarks, count, aspect, state.openness);
+  state.eyeMedian.push(state.openness[0]);
+  const baseline = state.eyeMedian.count >= 5 ? state.eyeMedian.value : 0;
+  if (baseline > 0 && state.openness[0] < baseline * CFG.blinkRatio) return false;
+
+  // 3) 眼球特徴。虹彩を基準フレームへ写すので、頭の回転に依存しない
   core.landmarkToIsotropic(landmarks[468], aspect, state.irisLeft);
   core.landmarkToIsotropic(landmarks[473], aspect, state.irisRight);
   core.extractEyeFeatures(
     state.irisLeft, state.irisRight, state.rotation, state.translation, scale, model.reference, state.eyeFeatures
   );
 
-  // 3) 瞬き中は虹彩が当てにならないので基準値に置き換える。
-  //    こうすると自動的に「頭の向きだけ」での推定に落ちる（融合）。
-  core.eyeOpenness(landmarks, count, aspect, state.openness);
-  state.eyeMedian.push(state.openness[0]);
-  const baseline = state.eyeMedian.count >= 5 ? state.eyeMedian.value : 0;
-  if (baseline > 0 && state.openness[0] < baseline * CFG.blinkRatio) {
-    model.neutralEye(state.eyeFeatures);
-  }
+  // 4) 特徴量を平滑化してから回帰に渡す（姿勢は強く、眼球は軽く）
+  state.filteredPose[0] = state.poseYaw.filter(state.euler[0], timeMs);
+  state.filteredPose[1] = state.posePitch.filter(state.euler[1], timeMs);
+  state.filteredEye[0] = state.eyeH.filter(state.eyeFeatures[0], timeMs);
+  state.filteredEye[1] = state.eyeV.filter(state.eyeFeatures[1], timeMs);
+  const smoothScale = state.poseScale.filter(scale, timeMs);
 
-  // 4) 特徴量 → 推定
-  core.fillBasis(state.euler, state.eyeFeatures, scale, state.basis);
+  // 5) 特徴量 → 推定
+  core.fillBasis(state.filteredPose, state.filteredEye, smoothScale, state.basis);
   if (!model.predict(state.basis, state.predicted, state.mode)) return false;
 
   const width = window.innerWidth;
@@ -748,6 +773,7 @@ function startTracking() {
     dwellMs: state.dwellMs,
     pauseAfterMs: CFG.pauseAfterMs,
     failStopAfterMs: CFG.failStopAfterMs,
+    deadzonePx: CFG.deadzonePx,
   });
   state.controller.arm(performance.now(), window.innerWidth, window.innerHeight);
   renderHud();

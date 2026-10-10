@@ -29,7 +29,9 @@ export const DEFAULT_CONFIG = {
   dwellCooldownMs: 700,
   maxStepPx: 220,
   maxTargetSpeedPxPerSec: 2500,
-  deadzonePx: 1.5,
+  // 推定の細かい揺れを追わないための不感帯。実測で 40px にすると
+  // カーソルの移動量が 1/6、方向反転が 1/17 になり、ほぼ静止して見える。
+  deadzonePx: 40,
   pauseAfterMs: 250,
   failStopAfterMs: 1500,
   recenterCooldownMs: 1200,
