@@ -2,9 +2,9 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>キチガイ風車 | others</title>
-  <meta name="description" content="Webカメラの視線で遊ぶ、見られるなホラー" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <title>kichigai-windmill | others</title>
+  <meta name="description" content="回る矢印をかわして逃げる、キチガイ風車のワンタップ脱出ゲーム" />
   <meta name="theme-color" content="#0b0910" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -14,24 +14,15 @@
   <canvas id="game"></canvas>
 
   <div class="hud">
-    <div class="hud-item"><span class="hud-key">SCORE</span><span class="hud-val" id="hud-score">0</span></div>
-    <div class="hud-item"><span class="hud-key">LEVEL</span><span class="hud-val" id="hud-level">1</span></div>
-    <div class="hud-item"><span class="hud-key">ESCAPES</span><span class="hud-val" id="hud-escapes">0</span></div>
-    <div class="hud-item"><span class="hud-key">STATE</span><span class="hud-val" id="hud-state">静穏</span></div>
-    <div class="hud-item"><span class="hud-key">INPUT</span><span class="hud-val" id="hud-source">視線</span></div>
-  </div>
-
-  <div class="stare">
-    <span class="stare-key">注視</span>
-    <div class="stare-bar"><i id="hud-stare"></i></div>
+    <div class="hud-item"><span class="hud-key">逃げた</span><span class="hud-val" id="hud-dodges">0</span></div>
+    <div class="hud-item"><span class="hud-key">コンボ</span><span class="hud-val" id="hud-combo">0</span></div>
+    <div class="hud-item"><span class="hud-key">生存</span><span class="hud-val" id="hud-time">0.0</span></div>
   </div>
 
   <div id="announce" class="announce" aria-live="assertive"></div>
   <p id="hint" class="hint" aria-live="polite"></p>
 
   <div class="hud-actions">
-    <button id="calibrate" class="action" type="button">CALIBRATE</button>
-    <button id="preview" class="action" type="button">PREVIEW</button>
     <button id="mute" class="action mute-btn" type="button" aria-label="音の切り替え">
       <svg class="ic-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
@@ -49,28 +40,18 @@
   <div id="title" class="overlay">
     <div class="dialog">
       <p class="eyebrow">others / kichigai-windmill</p>
+      <pre class="art" aria-hidden="true">   👆
+👈😁👉
+   👇</pre>
       <h1>キチガイ風車</h1>
       <ul class="rules">
-        <li>画面をうろつく風車は、こちらの<b>視線</b>を追ってきます。</li>
-        <li>視線を風車に重ねたままにすると<b>"認識"</b>され、<b class="danger">逃げろ逃げろ逃げろ</b>の猶予が始まります。</li>
-        <li>猶予のうちに視線を風車から外して見失わせれば<b>逃走成功</b>。間に合わなければ終わりです。</li>
-        <li><b>的（十字）を注視すると得点</b>。ただし見つめるほど風車が寄ってきます。</li>
+        <li>風車の矢印が回っています。<b>矢印が下の自分を指した瞬間</b>が危ない。</li>
+        <li>指される直前に <b>タップ / クリック / スペース</b> で<b>逃げる</b>。</li>
+        <li>空振りすると <b>見られている</b> メーターが上がります。満タンで<b class="danger">"認識"された</b>。</li>
+        <li>かわしそこねて矢印が自分を刺すと、それで終わりです。</li>
       </ul>
-      <p class="lead">照準は Webカメラから推定した実際のあなたの視線です。<b>マウス</b>でも遊べます。</p>
+      <p class="lead">レベルが上がると回転が速くなり、羽根が <b>👆👈😁👉👇</b> の4本まで増えます。時々<b>逆回転</b>します。</p>
       <div class="panel">
-        <div>
-          <p class="panel-label">遊び方</p>
-          <div class="modes" role="radiogroup" aria-label="遊び方">
-            <button class="mode-card selected" type="button" role="radio" aria-checked="true" data-mode="gaze">
-              <span class="mode-name">Webカメラで目が合う</span>
-              <span class="mode-desc">実際の視線で照準を動かします。軽いキャリブレーションが要ります</span>
-            </button>
-            <button class="mode-card" type="button" role="radio" aria-checked="false" data-mode="pointer">
-              <span class="mode-name">マウスで遊ぶ</span>
-              <span class="mode-desc">ポインタが照準になります。カメラが無くても遊べます</span>
-            </button>
-          </div>
-        </div>
         <div>
           <p class="panel-label">難易度</p>
           <div class="difficulty-group" role="group" aria-label="難易度">
@@ -82,23 +63,24 @@
         </div>
       </div>
       <button id="start" class="start-btn" type="button">はじめる</button>
-      <p class="best">最高得点 <span id="best">0</span></p>
-      <p id="title-status" class="note">カメラ映像はブラウザの中だけで使います。どこにも送信しません。カメラは最初に13点のキャリブレーションをします。</p>
+      <p class="best">最高記録 <span id="best">0</span> 回</p>
+      <p id="title-status" class="note">タップ / クリック / スペースで逃げる。連打は「見られている」ので注意。</p>
     </div>
   </div>
 
   <div id="result" class="overlay hidden">
     <div class="dialog">
       <p class="eyebrow">others / kichigai-windmill</p>
-      <h1>"認識" された</h1>
+      <pre class="art" aria-hidden="true">🫵🫪🫵</pre>
+      <h1>まずい "認識" された</h1>
       <div class="result">
-        <p class="result-score"><span id="result-score">0</span><small>点</small><span id="result-new" class="result-new" hidden>NEW</span></p>
-        <p class="result-stats">
-          逃走成功 <b id="result-escapes">0</b> 回 ／ 到達レベル <b id="result-level">1</b> ／ 最高 <b id="result-best">0</b>
-        </p>
+        <p class="result-score"><span id="result-dodges">0</span><small>回 逃げた</small><span id="result-new" class="result-new" hidden>NEW</span></p>
+        <p class="result-rank" id="result-rank">風車の餌</p>
+        <p class="result-stats">最大コンボ <b id="result-combo">0</b> ／ 生存 <b id="result-time">0</b> 秒 ／ 最高 <b id="result-best">0</b> 回</p>
       </div>
-      <button id="retry" class="start-btn" type="button">もういちど</button>
-      <button id="back-title" class="ghost-btn" type="button">モード選択に戻る</button>
+      <button id="share" class="start-btn" type="button">結果をシェア</button>
+      <button id="retry" class="ghost-btn" type="button">もういちど</button>
+      <button id="back-title" class="ghost-btn" type="button">タイトルに戻る</button>
     </div>
   </div>
 
