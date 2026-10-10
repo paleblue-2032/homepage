@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>gaze-cursor | others</title>
+  <meta name="description" content="Webカメラの視線でカーソルを動かすやつ" />
+  <meta name="theme-color" content="#141017" />
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../others.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="page">
+    <p class="breadcrumb"><a href="../">← others</a></p>
+
+    <header class="page-head">
+      <h1 class="page-title">gaze-cursor</h1>
+      <p class="page-lead">Webカメラの映像から視線を推定して、カーソルを目で動かす</p>
+    </header>
+
+    <p class="notice">
+      これは Web 上だけで完結するコンテンツではありません。視線の推定そのものはブラウザの中
+      （MediaPipe の WASM）で完結しますが、OS のカーソルを動かすにはローカルで動く小さなブリッジが要ります。
+      ブリッジは
+      <code>others/gaze-cursor/bridge.py</code>
+      で、追加のインストールは不要（Python の標準ライブラリだけ）です。
+    </p>
+
+    <div class="actions">
+      <button type="button" class="action" id="start">START</button>
+      <span class="status" id="page-status">bridge: 確認中...</span>
+    </div>
+
+    <div class="prose">
+      <section>
+        <h2>概要</h2>
+        <p>
+          画面の9点を順に注視してもらって、そのときの目と虹彩の位置から画面座標への回帰を最小二乗で解きます。
+          あとはキャリブレーション結果に今の目の位置を突っ込んで、出てきた座標にカーソルを寄せていくだけです。
+        </p>
+        <p>
+          カーソルはブラウザから直接動かせないので、ブリッジが <code>/dev/uinput</code> に仮想マウスを作って
+          相対移動イベントを書き込みます。カーネルから見ると普通のマウスなので、
+          Wayland（niri）でも X11 でも同じように動き、root も <code>ydotool</code> も要りません。
+          ただし相対移動だとカーソルの現在位置が分からないので、ページ側が <code>mousemove</code>
+          で実際の位置を受け取って差分をループで詰めています。ポインタ加速がかかっていても
+          この閉ループが吸収してくれるので、環境ごとのゲイン調整は不要です。
+        </p>
+      </section>
+
+      <section>
+        <h2>使い方</h2>
+        <ol>
+          <li>リポジトリのルートで <code>python3 others/gaze-cursor/bridge.py</code> を実行</li>
+          <li>表示された <code>http://127.0.0.1:8765/others/gaze-cursor/</code> を Chrome で開く</li>
+          <li><code>START</code> を押してカメラを許可（全画面になります）</li>
+          <li><code>CALIBRATE</code> を押して、出てくる9点を順に目で追う</li>
+          <li><code>START TRACKING</code> でカーソルが視線で動きます。注視したままにすると左クリックします</li>
+        </ol>
+        <p>
+          止めるときは <code>Esc</code>（全画面解除で追跡も停止）か、ブリッジ側の <code>Ctrl+C</code> が確実です。
+        </p>
+      </section>
+
+      <section>
+        <h2>仕組み</h2>
+        <table>
+          <thead>
+            <tr><th>要素</th><th>内容</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>視線推定</td>
+              <td>MediaPipe FaceLandmarker（478点）の虹彩ランドマークを、目頭・目尻の線分と上瞼・下瞼の線分に射影して比率化</td>
+            </tr>
+            <tr>
+              <td>キャリブレーション</td>
+              <td>9点それぞれで40フレームの中央値を取り、その特徴量から画面座標へのリッジ回帰を x/y 別に解く</td>
+            </tr>
+            <tr>
+              <td>カーソル移動</td>
+              <td>ブリッジが <code>/dev/uinput</code> に作った仮想マウスへ相対移動を送信。位置は <code>mousemove</code> のフィードバックで収束させる</td>
+            </tr>
+            <tr>
+              <td>注視クリック</td>
+              <td>視線が 900 ms 止まったら左クリック（画面に進捗リングが出ます）</td>
+            </tr>
+            <tr>
+              <td>なめらか化</td>
+              <td>直近3フレームの中央値で単発のスパイクを落としてから 1€ filter に通す。止まっているときは強く平滑化し、速く動くときは遮断周波数を上げて遅れを出さない</td>
+            </tr>
+            <tr>
+              <td>計測</td>
+              <td>HUD に、移動指令からカーソルが実際に動くまでの遅延、カメラの実解像度と fps、顔検出の取りこぼし率を常に出している</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>注意・制約</h2>
+        <ul>
+          <li>精度は頭の位置に強く依存します。キャリブレーションのときと同じ姿勢を保つのが一番効きます</li>
+          <li>全画面で使う前提です。ウィンドウ表示だと画面座標とページ座標がズレて狙った場所に行きません</li>
+          <li>キャリブレーション結果は <code>localStorage</code> に保存するので、姿勢を変えなければ次回は <code>CALIBRATE</code> を飛ばせます</li>
+          <li>HUD の <code>LATENCY</code> は移動指令からカーソルが動くまでの実測値、<code>CAMERA</code> は実際に取れている解像度と fps です。要求した 60fps が来ていないことが多いので、まずここを見てください</li>
+          <li>遅延や誤差でカーソルが狙った場所に行かないことがあります。視線だけで長文を書くのはまだつらいです</li>
+          <li>このページを公開サイト上で開いた場合でも、ローカルでブリッジが動いていれば <code>127.0.0.1:8765</code> に繋ぎにいきます（動いていなければ <code>START</code> の時点で弾かれます）</li>
+          <li>ブリッジは <code>127.0.0.1</code> だけで待ち受けます。外部からは触れません</li>
+        </ul>
+      </section>
+    </div>
+  </main>
+
+  <section class="stage" id="stage" hidden>
+    <a class="stage-back" href="../">← others</a>
+    <video id="cam" playsinline autoplay muted></video>
+    <canvas id="overlay"></canvas>
+
+    <div class="hud">
+      <div class="hud-item"><span class="hud-key">TRACKING</span><span class="hud-val" id="hud-tracking">OFF</span></div>
+      <div class="hud-item"><span class="hud-key">ERROR</span><span class="hud-val" id="hud-calib">none</span></div>
+      <div class="hud-item"><span class="hud-key">LATENCY</span><span class="hud-val" id="hud-latency">--</span></div>
+      <div class="hud-item"><span class="hud-key">CAMERA</span><span class="hud-val" id="hud-cam">--</span></div>
+      <div class="hud-item"><span class="hud-key">FPS</span><span class="hud-val" id="hud-fps">0</span></div>
+      <div class="hud-item"><span class="hud-key">NO FACE</span><span class="hud-val" id="hud-miss">0%</span></div>
+    </div>
+
+    <div class="hud-actions">
+      <button type="button" class="action" id="calibrate">CALIBRATE</button>
+      <button type="button" class="action" id="track">START TRACKING</button>
+      <button type="button" class="action" id="exit">EXIT</button>
+      <label class="hud-slider">DWELL
+        <input type="range" id="dwell" min="400" max="1800" step="50" value="900" />
+        <span class="hud-val" id="dwell-val">900ms</span>
+      </label>
+      <label class="hud-slider">SMOOTH
+        <input type="range" id="smooth" min="0" max="100" step="1" value="28" />
+        <span class="hud-val" id="smooth-val">28</span>
+      </label>
+    </div>
+
+    <p class="hud-hint" id="hud-hint"></p>
+  </section>
+
+  <script type="module" src="script.js"></script>
+</body>
+</html>

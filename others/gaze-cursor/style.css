@@ -1,0 +1,232 @@
+.notice {
+  padding: 16px 18px;
+  margin-bottom: 40px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.notice code,
+.prose code {
+  padding: 0.1em 0.4em;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 0.88em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.prose section {
+  margin-bottom: 40px;
+}
+
+.prose h2 {
+  margin-bottom: 14px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.prose p {
+  margin-bottom: 12px;
+}
+
+.prose ul,
+.prose ol {
+  margin: 0 0 12px;
+  padding-left: 1.4em;
+}
+
+.prose li {
+  margin-bottom: 6px;
+}
+
+.prose table {
+  width: 100%;
+  margin: 0 0 16px;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.prose th,
+.prose td {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose th {
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.prose td {
+  color: var(--text-muted);
+}
+
+/* 操作ボタン */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 40px;
+}
+
+.action {
+  padding: 9px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.action:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.action:disabled {
+  color: var(--text-muted);
+  border-color: var(--border);
+  cursor: default;
+}
+
+.status {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* 追跡中の全画面ステージ */
+.stage {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  overflow: hidden;
+  background: var(--base);
+}
+
+.stage[hidden] {
+  display: none;
+}
+
+#cam {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  opacity: 0.16;
+  filter: grayscale(1);
+}
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.stage-back {
+  position: absolute;
+  top: 20px;
+  left: 24px;
+  z-index: 3;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  transition: color 0.2s ease;
+}
+
+.stage-back:hover {
+  color: var(--accent);
+}
+
+.hud {
+  position: absolute;
+  top: 18px;
+  right: 24px;
+  z-index: 3;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+}
+
+.hud-item {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.hud-key {
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+}
+
+.hud-val {
+  min-width: 6em;
+  text-align: right;
+  color: var(--text);
+}
+
+.hud-actions {
+  position: absolute;
+  bottom: 24px;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 0 24px;
+}
+
+.hud-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.hud-slider input[type="range"] {
+  width: 108px;
+  accent-color: var(--accent);
+}
+
+.hud-hint {
+  position: absolute;
+  bottom: 78px;
+  left: 24px;
+  right: 24px;
+  z-index: 3;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+@media (max-width: 560px) {
+  .prose table {
+    font-size: 0.82rem;
+  }
+
+  .prose th,
+  .prose td {
+    padding: 8px;
+  }
+
+  .hud-slider input[type="range"] {
+    width: 72px;
+  }
+}
