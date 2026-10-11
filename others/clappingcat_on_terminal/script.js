@@ -5,7 +5,6 @@
 
   const fpsInput = document.getElementById("cat-fps");
   const fpsLabel = document.getElementById("cat-fps-label");
-  const replayBtn = document.getElementById("cat-replay");
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
 
   let fps = fpsInput ? Number(fpsInput.value) || 12 : 12;
@@ -34,12 +33,6 @@
     timer = setInterval(tick, Math.round(1000 / fps));
   }
 
-  function restart() {
-    index = 0;
-    render();
-    start();
-  }
-
   function setFps(value) {
     fps = value;
     if (fpsLabel) fpsLabel.textContent = fps + " fps";
@@ -51,7 +44,6 @@
     fpsInput.addEventListener("input", () => setFps(Number(fpsInput.value) || 12));
   }
   if (fpsLabel) fpsLabel.textContent = fps + " fps";
-  if (replayBtn) replayBtn.addEventListener("click", restart);
 
   render();
   start();
