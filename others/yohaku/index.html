@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>yohaku | others</title>
+  <meta name="description" content="Markdownプレビュー機能付きの、シンプルなメモ帳エディタ（Qt 6 / QML）" />
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../others.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="page">
+    <p class="breadcrumb"><a href="../">← others</a></p>
+
+    <header class="page-head">
+      <h1 class="page-title">yohaku</h1>
+      <p class="page-lead">Markdownプレビュー機能付きの、シンプルで機能美に優れたメモ帳エディタ</p>
+    </header>
+
+    <p class="notice">
+      これは Web 上で動作するアプリではなく、Qt 6 / QML で書いたデスクトップアプリです。
+      ここでは概要だけ説明します。ビルド方法・ショートカット・設定は
+      <a href="https://github.com/paleblue-2032/yohaku" target="_blank" rel="noopener noreferrer">GitHub</a>
+      で公開しています。
+    </p>
+
+    <div class="app-head">
+      <img class="app-icon" src="yohaku.png" alt="yohaku icon" width="72" height="72" />
+      <p class="page-lead">余白を大切に、書くことだけに集中できるエディタ。</p>
+    </div>
+
+    <div class="prose">
+      <section>
+        <h2>概要</h2>
+        <p>
+          Linux (Wayland / X11)・macOS・Windows で動く、たたき台ではなく常用できるメモ帳です。
+          標準ショートカットがそのまま効き、タブ・セッション復元・栞・検索・Markdown プレビューを備えています。
+          設定は <code>~/.config/yohaku/settings.json</code> の 1 ファイルにまとまっていて、
+          テーマやアクセントカラー、キー割り当ても JSON で変更できます。
+        </p>
+      </section>
+
+      <section>
+        <h2>特徴</h2>
+        <ul>
+          <li>標準ショートカットがそのまま効く（<code>Ctrl+C / V / X / Z / S</code> など）</li>
+          <li>タブ — 複数ファイルをタブで。<code>Ctrl+T</code> で新規、<code>Ctrl+Tab</code> で切替</li>
+          <li>セッション復元 — 終了時に開いていたタブを次回起動時に復元</li>
+          <li>栞 — 自動（最後のカーソル位置）・手動（<code>Ctrl+B</code>）・ファイル栞（<code>Ctrl+Shift+B</code>）</li>
+          <li>日本語入力 — fcitx5 などの IME からそのまま入力</li>
+          <li>テーマ &amp; アクセントカラー — ダーク / ライト、5 色</li>
+          <li>透過 — なし / 弱 / 中 / 強</li>
+          <li>Markdown プレビュー — GFM として解釈し、GitHub 風に整形（<code>Ctrl+P</code>、閲覧専用）</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>使い方</h2>
+        <pre><code>yohaku                      # 新しいノート
+yohaku file.txt             # ファイルを開く
+yohaku a.md b.txt           # 複数ファイルをタブで開く
+yohaku --preview file.md    # Markdown プレビューで開く</code></pre>
+        <p>すでに起動していれば、<code>yohaku file</code> は既存ウィンドウのタブとして開きます（単一インスタンス）。</p>
+      </section>
+
+      <section>
+        <h2>インストール</h2>
+        <p>ワンライナー（macOS / Linux）:</p>
+        <pre><code>curl -fsSL https://raw.githubusercontent.com/paleblue-2032/yohaku/main/scripts/install.sh | bash</code></pre>
+        <p>Nix（試すだけ）:</p>
+        <pre><code>nix run github:paleblue-2032/yohaku</code></pre>
+        <p>
+          <a href="https://github.com/paleblue-2032/yohaku/releases" target="_blank" rel="noopener noreferrer">Releases</a>
+          に macOS / Windows / Linux 向けのビルド済み成果物もあります。
+        </p>
+      </section>
+
+      <section>
+        <h2>主なショートカット</h2>
+        <table>
+          <thead>
+            <tr><th>キー</th><th>動作</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>Ctrl+T</code> / <code>Ctrl+N</code></td><td>新しいタブ</td></tr>
+            <tr><td><code>Ctrl+O</code></td><td>ファイルを開く</td></tr>
+            <tr><td><code>Ctrl+Tab</code> / <code>Ctrl+PageDown</code></td><td>次のタブ</td></tr>
+            <tr><td><code>Ctrl+S</code> / <code>Ctrl+Shift+S</code></td><td>保存 / 名前を付けて保存</td></tr>
+            <tr><td><code>Ctrl+F</code></td><td>検索（Enter 次、Esc 終了）</td></tr>
+            <tr><td><code>Ctrl+P</code></td><td>Markdown プレビュー切替</td></tr>
+            <tr><td><code>Ctrl+B</code> / <code>Ctrl+Shift+B</code></td><td>この行に栞 / ファイル栞</td></tr>
+            <tr><td><code>Ctrl+W</code> / <code>Ctrl+Q</code></td><td>タブを閉じる / 終了</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>リンク</h2>
+        <p class="repo-link">
+          リポジトリ: <a href="https://github.com/paleblue-2032/yohaku" target="_blank" rel="noopener noreferrer">paleblue-2032/yohaku</a>
+        </p>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

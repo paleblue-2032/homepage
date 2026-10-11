@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>clappingcat_on_terminal | others</title>
+  <meta name="description" content="タイポしたら黒猫が拍手して煽ってくる、ターミナル用の小さなCLI" />
+  <link rel="stylesheet" href="../../styles.css" />
+  <link rel="stylesheet" href="../others.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="page">
+    <p class="breadcrumb"><a href="../">← others</a></p>
+
+    <header class="page-head">
+      <h1 class="page-title">clappingcat_on_terminal</h1>
+      <p class="page-lead">タイポしたら黒猫が拍手して煽ってくる、ターミナル用の小さなCLI。コマンド名は <code>clpcat</code></p>
+    </header>
+
+    <p class="notice">
+      これは Web 上で動くアプリではなく、ターミナルで動かす CLI です。
+      雰囲気だけでも伝わるように、実際に使っている ASCII フレームをそのままブラウザで再生しています。
+      本体は <a href="https://github.com/paleblue-2032/clappingcat_on_terminal" target="_blank" rel="noopener noreferrer">GitHub</a> で公開しています。
+    </p>
+
+    <div class="cat-stage">
+      <pre class="cat-frame" id="cat-frame" aria-hidden="true">
+
+
+           =.       =#=
+           *%*-:::=###:
+           :%%##*#####
+            ##*###**##
+            =####**###
+             ###+=*#*#=.
+            =%%%%%###%%#=
+          ..%%%%%%%##*#%#+
+          .+#@@@%%%###%%%#
+        -##*#@@@@@@%%%%%%*
+        -###%@@@@@@@@@%%%+
+        .--#%@@@@@@@@%%%%=
+           +%%@@@@@@%%%%%-
+            =%%%%%@@%%%%%.
+            .%%%%%@%%%%%#
+             *%%#%%%%%%%-
+             ++.   -*%%=</pre>
+      <p class="cat-hint">ターミナルでは <code>q</code> / <code>Esc</code> / <code>Ctrl-C</code> で閉じられます</p>
+      <div class="cat-controls">
+        <button type="button" id="cat-replay">もう一回煽られる</button>
+        <label>再生速度 <input type="range" id="cat-fps" min="4" max="30" step="1" value="12" /> <span id="cat-fps-label">12 fps</span></label>
+      </div>
+    </div>
+
+    <div class="prose">
+      <section>
+        <h2>概要</h2>
+        <p>
+          存在しないコマンドを打つと、画面いっぱいに黒猫が現れてパチパチしながら煽ってきます。
+          モノクロの記号 ASCII で 1 フレームずつアニメーションします。
+          シェルの「コマンドが見つからない」フックに仕込むと、タイポのたびに確定で出てきます。
+        </p>
+      </section>
+
+      <section>
+        <h2>使い方</h2>
+        <pre><code>clpcat                # 猫が1回踊る
+clpcat -n 3           # 3回繰り返す
+clpcat -n 0           # 無限ループ（q で閉じる）
+clpcat --fps 24       # 再生速度を上げる</code></pre>
+        <table>
+          <thead>
+            <tr><th>オプション</th><th>説明</th><th>既定</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>-n, --repeat &lt;N&gt;</code></td><td>再生回数（<code>0</code> で無限ループ）</td><td><code>1</code></td></tr>
+            <tr><td><code>--fps &lt;FPS&gt;</code></td><td>再生速度（fps）</td><td><code>12</code></td></tr>
+          </tbody>
+        </table>
+        <p>再生中は <code>q</code> / <code>Esc</code> / <code>Ctrl-C</code> で閉じられます。</p>
+      </section>
+
+      <section>
+        <h2>タイポで煽らせる</h2>
+        <p>シェルの「コマンドが見つからない」フックに <code>clpcat</code> を仕込みます。</p>
+        <p>zsh（<code>~/.zshrc</code>）:</p>
+        <pre><code>command_not_found_handler() {
+  print -u2 "zsh: command not found: $1"
+  if [[ -t 1 &amp;&amp; -z "$CLPCAT_DISABLE" ]]; then
+    clpcat
+  fi
+  return 127
+}</code></pre>
+        <p>bash（<code>~/.bashrc</code>）:</p>
+        <pre><code>command_not_found_handle() {
+  echo "bash: $1: command not found" &gt;&amp;2
+  if [ -t 1 ] &amp;&amp; [ -z "$CLPCAT_DISABLE" ]; then
+    clpcat
+  fi
+  return 127
+}</code></pre>
+        <p><code>CLPCAT_DISABLE</code> を立てておくと自動再生を止められます（<code>export CLPCAT_DISABLE=1</code>）。</p>
+      </section>
+
+      <section>
+        <h2>インストール</h2>
+        <p>Nix（ワンオフ実行）:</p>
+        <pre><code>nix run github:paleblue-2032/clappingcat_on_terminal</code></pre>
+        <p>プリビルドバイナリ（Linux / musl 静的リンク）:</p>
+        <pre><code>curl -fsSL https://raw.githubusercontent.com/paleblue-2032/clappingcat_on_terminal/main/scripts/install.sh | bash</code></pre>
+      </section>
+
+      <section>
+        <h2>仕組み</h2>
+        <ul>
+          <li>元動画を <code>ffmpeg</code> で間引き・グレースケール化し、Python で輝度を ASCII ランプへ写像して <code>assets/frames.txt</code> を生成</li>
+          <li><code>frames.txt</code> はバイナリに <code>include_str!</code> で埋め込み（実行時に動画も ffmpeg も不要）</li>
+          <li><code>crossterm</code> でオルタネートスクリーンに中央寄せしてフレームを描画</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>リンク</h2>
+        <p class="repo-link">
+          リポジトリ: <a href="https://github.com/paleblue-2032/clappingcat_on_terminal" target="_blank" rel="noopener noreferrer">paleblue-2032/clappingcat_on_terminal</a>
+        </p>
+      </section>
+    </div>
+  </main>
+
+  <script src="frames.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
